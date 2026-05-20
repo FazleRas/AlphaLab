@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Query
-from app.services.market_data import get_multiple_prices, get_history
+from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators
 
 router = APIRouter()
 
@@ -11,3 +11,12 @@ def prices(tickers: str = Query(...)):
 @router.get("/history/{ticker}")
 def history(ticker: str, period: str = "1mo"):
     return {"ticker": ticker.upper(), "prices": get_history(ticker, period)}
+
+@router.get("/quote/{ticker}")
+def quote(ticker: str):
+    return {"ticker": ticker.upper(), "quote": get_quote(ticker)}
+
+
+@router.get("/indicators/{ticker}")
+def indicators(ticker: str, period: str = "3mo"):
+    return {"ticker": ticker.upper(), "indicators": get_indicators(ticker, period)}
