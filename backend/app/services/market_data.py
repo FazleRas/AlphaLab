@@ -68,3 +68,35 @@ def get_indicators(ticker: str, period: str = "3mo"):
         }
         for index, row in data.iterrows()
     ]
+
+def get_signals(ticker: str):
+    data = get_indicators(ticker, period="6mo")
+    
+    # grab the most recent day that has full indicator data
+    latest = next((d for d in reversed(data) if d["rsi"] is not None), None)
+    
+    if not latest:
+        return {"error": "not enough data to generate signals"}
+    
+    close = latest["close"]
+    sma_20 = latest["sma_20"]
+    sma_50 = latest["sma_50"]
+    rsi = latest["rsi"]
+    
+    return {
+        "ticker": ticker.upper(),
+        "date": latest["date"],
+        "close": close,
+        "signals": {
+            "rsi_oversold": bool(rsi < 30),
+            "rsi_overbought": bool(rsi > 70),
+            "price_above_sma20": bool(close > sma_20),
+            "price_above_sma50": bool(close > sma_50),
+            "sma20_above_sma50": bool(sma_20 > sma_50),
+            "bullish_trend": bool(close > sma_20 and sma_20 > sma_50),
+            "bearish_trend": bool(close < sma_20 and sma_20 < sma_50),
+        },
+        "rsi": rsi,
+        "sma_20": sma_20,
+        "sma_50": sma_50,
+    }
