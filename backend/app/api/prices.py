@@ -30,6 +30,7 @@ def signals(ticker: str):
 def scan(
     tickers: str = Query(...),
     bullish_trend: Optional[bool] = None,
+    bearish_trend: Optional[bool] = None,
     rsi_oversold: Optional[bool] = None,
     rsi_overbought: Optional[bool] = None,
     macd_bullish_crossover: Optional[bool] = None,
@@ -38,11 +39,12 @@ def scan(
     ticker_list = [t.strip().upper() for t in tickers.split(",")]
     filters = {
         "bullish_trend": bullish_trend,
+        "bearish_trend": bearish_trend,
         "rsi_oversold": rsi_oversold,
         "rsi_overbought": rsi_overbought,
         "macd_bullish_crossover": macd_bullish_crossover,
         "macd_bearish_crossover": macd_bearish_crossover,
     }
-    # remove filters that weren't passed in
+    
     active_filters = {k: v for k, v in filters.items() if v is not None}
     return {"results": scan_tickers(ticker_list, active_filters)}

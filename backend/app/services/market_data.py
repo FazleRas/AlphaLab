@@ -34,11 +34,19 @@ def get_history(ticker: str, period: str = "1mo"):
 def get_quote(ticker: str):
     stock = yf.Ticker(ticker)
     info = stock.info
+
+    price = (
+        info.get("currentPrice") or
+        info.get("regularMarketPrice") or
+        info.get("previousClose")
+    )
+    
     return {
-        "price": info.get("currentPrice"),
-        "day_high": info.get("dayHigh"),
-        "day_low": info.get("dayLow"),
-        "volume": info.get("volume"),
+        "ticker": ticker.upper(),
+        "price": price,
+        "day_high": info.get("dayHigh") or info.get("regularMarketDayHigh"),
+        "day_low": info.get("dayLow") or info.get("regularMarketDayLow"),
+        "volume": info.get("volume") or info.get("regularMarketVolume"),
         "market_cap": info.get("marketCap"),
         "pe_ratio": info.get("trailingPE"),
     }
@@ -118,6 +126,7 @@ def get_signals(ticker: str):
     }
 
 def scan_tickers(tickers: list[str], filters: dict):
+    print("FILTERS RECEIVED:", filters)
     results = []
     for ticker in tickers:
         try:
@@ -125,11 +134,15 @@ def scan_tickers(tickers: list[str], filters: dict):
             if "error" in signals:
                 continue
             
-            match = all(
-                signals["signals"].get(f) == True
-                for f in filters
-                if filters[f] == True
-            )
+            active_filters = {k: v for k, v in filters.items() if v == True}
+
+            if not active_filters:
+                match = True
+            else:
+                match = all(signals["signals"].get(f) == True for f in active_filters)
+
+            print(f"{ticker} bearish_trend:", signals["signals"].get("bearish_trend"))
+            print(f"{ticker} match:", match)
             
             if match:
                 results.append(signals)
