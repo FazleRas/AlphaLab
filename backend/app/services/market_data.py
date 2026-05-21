@@ -1,3 +1,5 @@
+from socket import close
+
 import yfinance as yf
 
 def get_price(ticker: str):
@@ -57,6 +59,13 @@ def get_indicators(ticker: str, period: str = "3mo"):
     loss = -delta.where(delta < 0, 0).rolling(window=14).mean()
     rs = gain / loss
     data["rsi"] = (100 - (100 / (1 + rs))).round(2)
+
+    # MACD
+    ema_12 = close.ewm(span=12, adjust=False).mean()
+    ema_26 = close.ewm(span=26, adjust=False).mean()
+    data["macd"] = (ema_12 - ema_26).round(4)
+    data["macd_signal"] = data["macd"].ewm(span=9, adjust=False).mean().round(4)
+    data["macd_histogram"] = (data["macd"] - data["macd_signal"]).round(4)
     
     return [
         {
@@ -65,6 +74,9 @@ def get_indicators(ticker: str, period: str = "3mo"):
             "sma_20": None if str(row["sma_20"]) == "nan" else row["sma_20"],
             "sma_50": None if str(row["sma_50"]) == "nan" else row["sma_50"],
             "rsi": None if str(row["rsi"]) == "nan" else row["rsi"],
+            "macd": None if str(row["macd"]) == "nan" else row["macd"],
+            "macd_signal": None if str(row["macd_signal"]) == "nan" else row["macd_signal"],
+            "macd_histogram": None if str(row["macd_histogram"]) == "nan" else row["macd_histogram"],
         }
         for index, row in data.iterrows()
     ]
@@ -95,8 +107,13 @@ def get_signals(ticker: str):
             "sma20_above_sma50": bool(sma_20 > sma_50),
             "bullish_trend": bool(close > sma_20 and sma_20 > sma_50),
             "bearish_trend": bool(close < sma_20 and sma_20 < sma_50),
+            "macd_bullish_crossover": bool(latest["macd"] > latest["macd_signal"]),
+            "macd_bearish_crossover": bool(latest["macd"] < latest["macd_signal"]),
         },
         "rsi": rsi,
         "sma_20": sma_20,
         "sma_50": sma_50,
+        "macd": latest["macd"],
+        "macd_signal": latest["macd_signal"],
+        "macd_histogram": latest["macd_histogram"],
     }
