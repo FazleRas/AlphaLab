@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Query
-from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals
+from typing import Optional
+from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers
 
 router = APIRouter()
 
@@ -24,3 +25,24 @@ def indicators(ticker: str, period: str = "3mo"):
 @router.get("/signals/{ticker}")
 def signals(ticker: str):
     return get_signals(ticker.upper())
+
+@router.get("/scan")
+def scan(
+    tickers: str = Query(...),
+    bullish_trend: Optional[bool] = None,
+    rsi_oversold: Optional[bool] = None,
+    rsi_overbought: Optional[bool] = None,
+    macd_bullish_crossover: Optional[bool] = None,
+    macd_bearish_crossover: Optional[bool] = None,
+):
+    ticker_list = [t.strip().upper() for t in tickers.split(",")]
+    filters = {
+        "bullish_trend": bullish_trend,
+        "rsi_oversold": rsi_oversold,
+        "rsi_overbought": rsi_overbought,
+        "macd_bullish_crossover": macd_bullish_crossover,
+        "macd_bearish_crossover": macd_bearish_crossover,
+    }
+    # remove filters that weren't passed in
+    active_filters = {k: v for k, v in filters.items() if v is not None}
+    return {"results": scan_tickers(ticker_list, active_filters)}
