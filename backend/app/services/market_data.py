@@ -74,8 +74,7 @@ def get_indicators(ticker: str, period: str = "3mo"):
             "sma_20": None if str(row["sma_20"]) == "nan" else row["sma_20"],
             "sma_50": None if str(row["sma_50"]) == "nan" else row["sma_50"],
             "rsi": None if str(row["rsi"]) == "nan" else row["rsi"],
-            "macd": None if str(row["macd"]) == "nan" else row["macd"],
-            "macd_signal": None if str(row["macd_signal"]) == "nan" else row["macd_signal"],
+            "macd": None if str(row["macd"]) == "nan" else row["macd"],            "macd_signal": None if str(row["macd_signal"]) == "nan" else row["macd_signal"],
             "macd_histogram": None if str(row["macd_histogram"]) == "nan" else row["macd_histogram"],
         }
         for index, row in data.iterrows()
@@ -117,3 +116,23 @@ def get_signals(ticker: str):
         "macd_signal": latest["macd_signal"],
         "macd_histogram": latest["macd_histogram"],
     }
+
+def scan_tickers(tickers: list[str], filters: dict):
+    results = []
+    for ticker in tickers:
+        try:
+            signals = get_signals(ticker)
+            if "error" in signals:
+                continue
+            
+            match = all(
+                signals["signals"].get(f) == True
+                for f in filters
+                if filters[f] == True
+            )
+            
+            if match:
+                results.append(signals)
+        except Exception:
+            continue
+    return results
