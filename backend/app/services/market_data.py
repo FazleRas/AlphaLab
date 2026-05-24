@@ -41,9 +41,16 @@ def get_quote(ticker: str):
         info.get("previousClose")
     )
     
+    open_price = info.get("regularMarketOpen") or info.get("open")
+    change = round(price - open_price, 2) if price and open_price else None
+    change_pct = round((change / open_price) * 100, 2) if change and open_price else None
+
     return {
         "ticker": ticker.upper(),
         "price": price,
+        "open": open_price,
+        "change": change,
+        "change_pct": change_pct,
         "day_high": info.get("dayHigh") or info.get("regularMarketDayHigh"),
         "day_low": info.get("dayLow") or info.get("regularMarketDayLow"),
         "volume": info.get("volume") or info.get("regularMarketVolume"),
