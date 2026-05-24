@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const API = 'http://127.0.0.1:8000';
+const API = 'https://alphalab-backend.onrender.com';
 
 const StatCard = ({ label, value, color }) => (
   <div className="p-3 rounded" style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e' }}>

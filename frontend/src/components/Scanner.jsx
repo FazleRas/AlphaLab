@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-const API = 'http://127.0.0.1:8000';
+const API = 'https://alphalab-backend.onrender.com';
 
 const signals = [
   { key: 'bullish_trend', label: 'BULLISH TREND' },
@@ -23,7 +23,7 @@ const macdColor = (histogram) => {
   if (!histogram) return '#e2e2e2';
   return histogram > 0 ? '#00c896' : '#ff4d6d';
 };
-
+/*
 const SignalBadge = ({ value }) => (
   <span className="font-mono text-xs px-2 py-1 rounded"
     style={{
@@ -32,7 +32,7 @@ const SignalBadge = ({ value }) => (
     }}>
     {value ? 'YES' : 'NO'}
   </span>
-);
+); */
 
 export default function Scanner() {
   const [tickers, setTickers] = useState('');
