@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import PriceChart from './PriceChart';
 
 const API = 'https://alphalab-backend.onrender.com';
 
@@ -116,6 +117,8 @@ export default function Dashboard() {
             <StatCard label="DAY LOW" value={`$${quote.day_low}`} />
             <StatCard label="P/E RATIO" value={quote.pe_ratio?.toFixed(2)} />
           </div>
+
+          <PriceChart ticker={quote?.ticker} />
 
           {/* Signals */}
           {signals && (
