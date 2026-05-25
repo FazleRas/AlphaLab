@@ -4,11 +4,11 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } f
 const API = 'https://alphalab-backend.onrender.com';
 
 export default function PriceChart({ ticker }) {
-  const [data, setData] = React.useState([]);
-  const [loading, setLoading] = React.useState(false);
-  const [period, setPeriod] = React.useState('3mo');
+    const [data, setData] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [period, setPeriod] = useState('3mo');
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!ticker) return;
     setLoading(true);
     fetch(`${API}/indicators/${ticker}?period=${period}`)
