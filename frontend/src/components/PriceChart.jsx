@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const API = 'https://alphalab-backend.onrender.com';
