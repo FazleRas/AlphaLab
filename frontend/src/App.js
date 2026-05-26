@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Dashboard from './components/Dashboard';
 import Scanner from './components/Scanner';
+import Backtest from './components/Backtest';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -12,7 +13,7 @@ function App() {
         <span className="font-mono text-xs" style={{ color: '#6b7280' }}>MARKET INTELLIGENCE</span>
       </div>
       <div style={{ borderBottom: '1px solid #1e1e2e' }} className="px-8 flex gap-8">
-        {['dashboard', 'scanner'].map(tab => (
+        {['dashboard', 'scanner', 'backtest'].map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -29,6 +30,7 @@ function App() {
       <div className="px-8 py-6">
         {activeTab === 'dashboard' && <Dashboard />}
         {activeTab === 'scanner' && <Scanner />}
+        {activeTab === 'backtest' && <Backtest />}
       </div>
     </div>
   );
