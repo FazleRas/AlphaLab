@@ -156,3 +156,51 @@ def scan_tickers(tickers: list[str], filters: dict):
         except Exception:
             continue
     return results
+
+def run_backtest(ticker: str, period: str, buy_rsi: float, sell_rsi: float):
+    data = get_indicators(ticker, period=period)
+    data = [d for d in data if d["rsi"] is not None]
+
+    trades = []
+    position = None
+
+    for day in data:
+        rsi = day["rsi"]
+        close = day["close"]
+        date = day["date"]
+
+        if position is None and rsi < buy_rsi:
+            position = {"buy_date": date, "buy_price": close}
+
+        elif position is not None and rsi > sell_rsi:
+            return_pct = round((close - position["buy_price"]) / position["buy_price"] * 100, 2)
+            trades.append({
+                "buy_date": position["buy_date"],
+                "buy_price": position["buy_price"],
+                "sell_date": date,
+                "sell_price": close,
+                "return_pct": return_pct,
+                "win": return_pct > 0
+            })
+            position = None
+
+    if not trades:
+        return {"error": "No trades were triggered with these parameters"}
+
+    total_return = round(sum(t["return_pct"] for t in trades), 2)
+    win_rate = round(sum(1 for t in trades if t["win"]) / len(trades) * 100, 2)
+    best_trade = max(trades, key=lambda t: t["return_pct"])
+    worst_trade = min(trades, key=lambda t: t["return_pct"])
+
+    return {
+        "ticker": ticker.upper(),
+        "period": period,
+        "buy_rsi": buy_rsi,
+        "sell_rsi": sell_rsi,
+        "total_return_pct": total_return,
+        "num_trades": len(trades),
+        "win_rate_pct": win_rate,
+        "best_trade": best_trade,
+        "worst_trade": worst_trade,
+        "trades": trades,
+    }
