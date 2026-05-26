@@ -53,7 +53,8 @@ def scan(
 def backtest(
     ticker: str,
     period: str = "1y",
+    strategy: str = "rsi",
     buy_rsi: float = 30,
     sell_rsi: float = 70,
 ):
-    return run_backtest(ticker.upper(), period, buy_rsi, sell_rsi)
+    return run_backtest(ticker.upper(), period, strategy, buy_rsi, sell_rsi)

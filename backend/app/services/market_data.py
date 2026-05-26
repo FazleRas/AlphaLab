@@ -157,9 +157,9 @@ def scan_tickers(tickers: list[str], filters: dict):
             continue
     return results
 
-def run_backtest(ticker: str, period: str, buy_rsi: float, sell_rsi: float):
+def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, sell_rsi: float = 70):
     data = get_indicators(ticker, period=period)
-    data = [d for d in data if d["rsi"] is not None]
+    data = [d for d in data if d["rsi"] is not None and d["macd"] is not None]
 
     trades = []
     position = None
@@ -168,11 +168,36 @@ def run_backtest(ticker: str, period: str, buy_rsi: float, sell_rsi: float):
         rsi = day["rsi"]
         close = day["close"]
         date = day["date"]
+        macd = day["macd"]
+        macd_signal = day["macd_signal"]
 
-        if position is None and rsi < buy_rsi:
+        # Define buy/sell signals based on strategy
+        if strategy == "rsi":
+            buy_signal = rsi < buy_rsi
+            sell_signal = rsi > sell_rsi
+
+        elif strategy == "macd":
+            buy_signal = macd > macd_signal
+            sell_signal = macd < macd_signal
+
+        elif strategy == "combined":
+            buy_signal = rsi < buy_rsi and macd > macd_signal
+            sell_signal = rsi > sell_rsi or macd < macd_signal
+
+        elif strategy == "golden_cross":
+            sma_20 = day["sma_20"]
+            sma_50 = day["sma_50"]
+            if sma_20 is None or sma_50 is None:
+                continue
+            buy_signal = sma_20 > sma_50
+            sell_signal = sma_20 < sma_50
+
+        else:
+            return {"error": f"Unknown strategy: {strategy}"}
+
+        if position is None and buy_signal:
             position = {"buy_date": date, "buy_price": close}
-
-        elif position is not None and rsi > sell_rsi:
+        elif position is not None and sell_signal:
             return_pct = round((close - position["buy_price"]) / position["buy_price"] * 100, 2)
             trades.append({
                 "buy_date": position["buy_date"],
@@ -195,6 +220,7 @@ def run_backtest(ticker: str, period: str, buy_rsi: float, sell_rsi: float):
     return {
         "ticker": ticker.upper(),
         "period": period,
+        "strategy": strategy,
         "buy_rsi": buy_rsi,
         "sell_rsi": sell_rsi,
         "total_return_pct": total_return,
