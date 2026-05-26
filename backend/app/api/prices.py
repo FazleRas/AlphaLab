@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 from typing import Optional
-from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers
+from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest
 
 router = APIRouter()
 
@@ -48,3 +48,12 @@ def scan(
     
     active_filters = {k: v for k, v in filters.items() if v is not None}
     return {"results": scan_tickers(ticker_list, active_filters)}
+
+@router.get("/backtest/{ticker}")
+def backtest(
+    ticker: str,
+    period: str = "1y",
+    buy_rsi: float = 30,
+    sell_rsi: float = 70,
+):
+    return run_backtest(ticker.upper(), period, buy_rsi, sell_rsi)
