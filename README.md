@@ -1,6 +1,6 @@
-# AlphaLab
+# AlphaLab 
 
-A full-stack trading analytics platform with real-time market data, technical indicators, an interactive price chart, and a multi-ticker signal scanner.
+A full-stack trading analytics platform with real-time market data, technical indicators, interactive charts, a multi-ticker signal scanner, and a multi-strategy backtesting engine.
 
 ## Live Demo
 
@@ -11,10 +11,12 @@ A full-stack trading analytics platform with real-time market data, technical in
 
 - Real-time stock quotes with intraday price change and % move
 - OHLCV historical data across multiple timeframes (1mo → max)
-- Technical indicators — SMA20, SMA50, RSI, MACD calculated from scratch using pandas
-- Signal engine — bullish/bearish trend detection, MACD crossovers, RSI extremes
+- Technical indicators - SMA20, SMA50, RSI, MACD calculated from scratch using pandas
+- Signal engine with bullish/bearish trend detection, MACD crossovers, RSI extremes
 - Multi-ticker scanner with composable signal filters
-- Interactive price chart with SMA overlays, line/bar toggle, and percent change on hover
+- Interactive price chart with SMA overlays, line/bar toggle, timeframe selector, and percent change on hover
+- Multi-strategy backtesting engine including RSI, MACD, combined RSI+MACD, and golden cross strategies
+- Trade history with win rate, total return, best/worst trade breakdown
 - Bloomberg-style dark UI built in React + Tailwind
 
 ## API Endpoints
@@ -26,6 +28,7 @@ A full-stack trading analytics platform with real-time market data, technical in
 - `GET /indicators/{ticker}?period=6mo` — SMA20, SMA50, RSI, MACD alongside daily closes
 - `GET /signals/{ticker}` — boolean signal snapshot (bullish trend, RSI overbought/oversold, MACD crossover)
 - `GET /scan?tickers=AAPL,NVDA,TSLA&bullish_trend=true` — multi-ticker scanner, filters by active signals
+- `GET /backtest/{ticker}?strategy=rsi&period=2y&buy_rsi=30&sell_rsi=70` — backtest a strategy against historical data
 
 ## Tech Stack
 
@@ -63,4 +66,4 @@ Then visit `http://127.0.0.1:8000/docs` for the interactive API docs or `http://
 
 ## Status
 
-Active development — next steps include strategy backtesting engine, watchlist with database persistence.
+Active development — next steps include equity curve visualization, benchmark comparison, and watchlist with database persistence.
