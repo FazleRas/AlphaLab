@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import EquityCurveChart from './EquityCurveChart';
 
 const API = 'https://alphalab-backend.onrender.com';
 
@@ -136,6 +137,8 @@ export default function Backtest() {
 
       {results && (
         <>
+          <EquityCurveChart data={results.equity_curve} />
+
           {/* Summary */}
           <div className="p-4 rounded mb-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
             <p className="font-mono text-xs mb-4 tracking-widest" style={{ color: '#6b7280' }}>
