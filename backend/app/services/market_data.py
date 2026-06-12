@@ -157,12 +157,19 @@ def scan_tickers(tickers: list[str], filters: dict):
             continue
     return results
 
+INITIAL_CAPITAL = 10000.0
+
+def _to_iso(date_str: str) -> str:
+    return f"{date_str}T00:00:00Z"
+
 def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, sell_rsi: float = 70):
     data = get_indicators(ticker, period=period)
     data = [d for d in data if d["rsi"] is not None and d["macd"] is not None]
 
     trades = []
     position = None
+    equity = INITIAL_CAPITAL
+    equity_curve = [{"timestamp": _to_iso(data[0]["date"]), "equity": equity}] if data else []
 
     for day in data:
         rsi = day["rsi"]
@@ -207,6 +214,8 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
                 "return_pct": return_pct,
                 "win": return_pct > 0
             })
+            equity *= (1 + return_pct / 100)
+            equity_curve.append({"timestamp": _to_iso(date), "equity": round(equity, 2)})
             position = None
 
     if not trades:
@@ -229,4 +238,6 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
         "best_trade": best_trade,
         "worst_trade": worst_trade,
         "trades": trades,
+        "initial_capital": INITIAL_CAPITAL,
+        "equity_curve": equity_curve,
     }
