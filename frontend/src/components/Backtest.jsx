@@ -17,6 +17,7 @@ export default function Backtest() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [strategy, setStrategy] = useState('rsi');
 
   const periods = ['6mo', '1y', '2y', '5y', 'max'];
 
@@ -25,7 +26,7 @@ export default function Backtest() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/backtest/${ticker}?period=${period}&buy_rsi=${buyRsi}&sell_rsi=${sellRsi}`);
+      const res = await fetch(`${API}/backtest/${ticker}?period=${period}&strategy=${strategy}&buy_rsi=${buyRsi}&sell_rsi=${sellRsi}`);
       const data = await res.json();
       if (data.error) {
         setError(data.error);
@@ -45,7 +46,7 @@ export default function Backtest() {
       {/* Inputs */}
       <div className="p-4 rounded mb-6" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
         <p className="font-mono text-xs mb-4 tracking-widest" style={{ color: '#6b7280' }}>STRATEGY PARAMETERS</p>
-        
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
           <div>
             <p className="font-mono text-xs mb-1" style={{ color: '#6b7280' }}>TICKER</p>
@@ -54,26 +55,6 @@ export default function Backtest() {
               onChange={e => setTicker(e.target.value.toUpperCase())}
               onKeyDown={e => e.key === 'Enter' && run()}
               placeholder="AAPL"
-              className="w-full px-3 py-2 font-mono text-sm rounded outline-none"
-              style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
-            />
-          </div>
-          <div>
-            <p className="font-mono text-xs mb-1" style={{ color: '#6b7280' }}>BUY RSI BELOW</p>
-            <input
-              type="number"
-              value={buyRsi}
-              onChange={e => setBuyRsi(e.target.value)}
-              className="w-full px-3 py-2 font-mono text-sm rounded outline-none"
-              style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
-            />
-          </div>
-          <div>
-            <p className="font-mono text-xs mb-1" style={{ color: '#6b7280' }}>SELL RSI ABOVE</p>
-            <input
-              type="number"
-              value={sellRsi}
-              onChange={e => setSellRsi(e.target.value)}
               className="w-full px-3 py-2 font-mono text-sm rounded outline-none"
               style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
             />
@@ -90,6 +71,55 @@ export default function Backtest() {
                 <option key={p} value={p}>{p.toUpperCase()}</option>
               ))}
             </select>
+          </div>
+          {(strategy === 'rsi' || strategy === 'combined') && (
+            <>
+              <div>
+                <p className="font-mono text-xs mb-1" style={{ color: '#6b7280' }}>BUY RSI BELOW</p>
+                <input
+                  type="number"
+                  value={buyRsi}
+                  onChange={e => setBuyRsi(e.target.value)}
+                  className="w-full px-3 py-2 font-mono text-sm rounded outline-none"
+                  style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
+                />
+              </div>
+              <div>
+                <p className="font-mono text-xs mb-1" style={{ color: '#6b7280' }}>SELL RSI ABOVE</p>
+                <input
+                  type="number"
+                  value={sellRsi}
+                  onChange={e => setSellRsi(e.target.value)}
+                  className="w-full px-3 py-2 font-mono text-sm rounded outline-none"
+                  style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="mb-4">
+          <p className="font-mono text-xs mb-2" style={{ color: '#6b7280' }}>STRATEGY</p>
+          <div className="flex gap-2 flex-wrap">
+            {[
+              { key: 'rsi', label: 'RSI' },
+              { key: 'macd', label: 'MACD' },
+              { key: 'combined', label: 'RSI + MACD' },
+              { key: 'golden_cross', label: 'GOLDEN CROSS' },
+            ].map(s => (
+              <button
+                key={s.key}
+                onClick={() => setStrategy(s.key)}
+                className="px-3 py-1 font-mono text-xs rounded"
+                style={{
+                  backgroundColor: strategy === s.key ? '#2563eb20' : 'transparent',
+                  border: `1px solid ${strategy === s.key ? '#2563eb' : '#1e1e2e'}`,
+                  color: strategy === s.key ? '#2563eb' : '#6b7280',
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -109,7 +139,7 @@ export default function Backtest() {
           {/* Summary */}
           <div className="p-4 rounded mb-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
             <p className="font-mono text-xs mb-4 tracking-widest" style={{ color: '#6b7280' }}>
-              {results.ticker} — RSI STRATEGY (BUY &lt; {results.buy_rsi} / SELL &gt; {results.sell_rsi})
+              {results.ticker} — {results.strategy.toUpperCase().replace('_', ' ')} STRATEGY
             </p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <StatCard
