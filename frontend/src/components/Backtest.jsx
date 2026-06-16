@@ -17,6 +17,15 @@ const StatCard = ({ label, value, color }) => (
   </div>
 );
 
+// Sharpe color bands: <0 red, 0–1 orange, 1–2 white, >2 green.
+const sharpeColor = (s) => {
+  if (s == null) return '#6b7280';
+  if (s < 0) return '#ff4d6d';
+  if (s < 1) return '#f97316';
+  if (s < 2) return '#e2e2e2';
+  return '#00c896';
+};
+
 export default function Backtest() {
   const [ticker, setTicker] = useState('');
   const [period, setPeriod] = useState('2y');
@@ -160,6 +169,16 @@ export default function Backtest() {
                 color={results.total_return_pct > 0 ? '#00c896' : '#ff4d6d'}
               />
               <StatCard
+                label="ANNUALIZED RETURN (CAGR)"
+                value={results.cagr_pct != null ? `${results.cagr_pct > 0 ? '+' : ''}${results.cagr_pct}%` : null}
+                color={results.cagr_pct != null ? (results.cagr_pct > 0 ? '#00c896' : '#ff4d6d') : undefined}
+              />
+              <StatCard
+                label="SHARPE"
+                value={results.sharpe != null ? results.sharpe.toFixed(2) : null}
+                color={sharpeColor(results.sharpe)}
+              />
+              <StatCard
                 label="BUY & HOLD"
                 value={`${results.buy_hold_return_pct > 0 ? '+' : ''}${results.buy_hold_return_pct}%`}
               />
@@ -169,29 +188,17 @@ export default function Backtest() {
                   value={`${results.spy_return_pct > 0 ? '+' : ''}${results.spy_return_pct}%`}
                 />
               )}
-              {results.buy_hold_return_pct != null && (
-                <StatCard
-                  label="ALPHA vs B&H"
-                  value={`${results.total_return_pct - results.buy_hold_return_pct > 0 ? '+' : ''}${(results.total_return_pct - results.buy_hold_return_pct).toFixed(2)}%`}
-                  color={results.total_return_pct - results.buy_hold_return_pct >= 0 ? '#00c896' : '#ff4d6d'}
-                />
-              )}
               <StatCard
                 label="MAX DRAWDOWN"
                 value={`${results.max_drawdown_pct}%`}
                 color={results.max_drawdown_pct < 0 ? '#ff4d6d' : '#6b7280'}
               />
-              <StatCard label="NUM TRADES" value={results.num_trades} />
               <StatCard
                 label="WIN RATE"
                 value={`${results.win_rate_pct}%`}
                 color={results.win_rate_pct >= 50 ? '#00c896' : '#ff4d6d'}
               />
-              <StatCard
-                label="BEST TRADE"
-                value={`+${results.best_trade.return_pct}%`}
-                color="#00c896"
-              />
+              <StatCard label="NUM TRADES" value={results.num_trades} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3 rounded" style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e' }}>
