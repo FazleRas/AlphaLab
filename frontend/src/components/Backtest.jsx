@@ -148,7 +148,7 @@ export default function Backtest() {
               <StatCard
                 label="TOTAL RETURN"
                 value={`${results.total_return_pct > 0 ? '+' : ''}${results.total_return_pct}%`}
-                color={results.total_return_pct >= results.buy_hold_return_pct ? '#00c896' : '#ff4d6d'}
+                color={results.total_return_pct > 0 ? '#00c896' : '#ff4d6d'}
               />
               <StatCard
                 label="BUY & HOLD"
@@ -211,11 +211,14 @@ export default function Backtest() {
                     <span className="font-mono text-xs" style={{ color: '#e2e2e2' }}>
                       ${trade.buy_price} → ${trade.sell_price}
                     </span>
+                    <span className="font-mono text-xs" style={{ color: '#6b7280' }}>
+                      BAL ${trade.equity_after?.toLocaleString()}
+                    </span>
                     <span className="font-mono text-xs px-2 py-0.5 rounded" style={{
                       backgroundColor: trade.win ? '#00c89620' : '#ff4d6d20',
                       color: trade.win ? '#00c896' : '#ff4d6d',
                     }}>
-                      {trade.return_pct > 0 ? '+' : ''}{trade.return_pct}%
+                      {trade.return_pct > 0 ? '+' : ''}{trade.return_pct}% ({trade.pnl > 0 ? '+' : ''}${trade.pnl?.toLocaleString()})
                     </span>
                   </div>
                 </div>
