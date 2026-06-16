@@ -6,16 +6,26 @@ const API = 'https://alphalab-backend.onrender.com';
 export default function PriceChart({ ticker }) {
     const [data, setData] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
     const [period, setPeriod] = useState('3mo');
     const [chartType, setChartType] = useState('line');
 
   useEffect(() => {
     if (!ticker) return;
     setLoading(true);
+    setError(null);
     fetch(`${API}/indicators/${ticker}?period=${period}`)
-      .then(r => r.json())
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then(d => {
         setData(d.indicators || []);
+        setLoading(false);
+      })
+      .catch(() => {
+        setData([]);
+        setError('Failed to load chart data.');
         setLoading(false);
       });
   }, [ticker, period]);
@@ -65,6 +75,8 @@ return (
 
       {loading ? (
         <p className="font-mono text-xs" style={{ color: '#6b7280' }}>LOADING...</p>
+      ) : error ? (
+        <p className="font-mono text-xs" style={{ color: '#ff4d6d' }}>{error}</p>
       ) : (
         <>
         {chartType === 'line' ? (

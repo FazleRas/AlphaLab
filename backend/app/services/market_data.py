@@ -89,10 +89,15 @@ def get_indicators(ticker: str, period: str = "3mo"):
             "sma_20": None if str(row["sma_20"]) == "nan" else row["sma_20"],
             "sma_50": None if str(row["sma_50"]) == "nan" else row["sma_50"],
             "rsi": None if str(row["rsi"]) == "nan" else row["rsi"],
-            "macd": None if str(row["macd"]) == "nan" else row["macd"],            "macd_signal": None if str(row["macd_signal"]) == "nan" else row["macd_signal"],
+            "macd": None if str(row["macd"]) == "nan" else row["macd"],
+            "macd_signal": None if str(row["macd_signal"]) == "nan" else row["macd_signal"],
             "macd_histogram": None if str(row["macd_histogram"]) == "nan" else row["macd_histogram"],
         }
+        # Skip rows with no close. yfinance returns the current incomplete
+        # trading day with a NaN close, which is not JSON-serializable and
+        # breaks /indicators (the chart), /signals, and backtests.
         for index, row in data.iterrows()
+        if row["Close"] == row["Close"]
     ]
 
 def get_signals(ticker: str):
@@ -224,22 +229,29 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
             position = {"buy_date": date, "buy_price": close}
         elif position is not None and sell_signal:
             return_pct = round((close - position["buy_price"]) / position["buy_price"] * 100, 2)
+            equity_before = equity
+            equity *= (1 + return_pct / 100)
+            pnl = round(equity - equity_before, 2)
             trades.append({
                 "buy_date": position["buy_date"],
                 "buy_price": position["buy_price"],
                 "sell_date": date,
                 "sell_price": close,
                 "return_pct": return_pct,
+                "pnl": pnl,
+                "equity_after": round(equity, 2),
                 "win": return_pct > 0
             })
-            equity *= (1 + return_pct / 100)
             equity_curve.append({"timestamp": _to_iso(date), "equity": round(equity, 2)})
             position = None
 
     if not trades:
         return {"error": "No trades were triggered with these parameters"}
 
-    total_return = round(sum(t["return_pct"] for t in trades), 2)
+    # Total return is the compounded growth of capital across all trades, not
+    # the sum of per-trade percentages (which overstates results and can show a
+    # gain when the compounded equity actually ended underwater).
+    total_return = round((equity - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2)
     win_rate = round(sum(1 for t in trades if t["win"]) / len(trades) * 100, 2)
     best_trade = max(trades, key=lambda t: t["return_pct"])
     worst_trade = min(trades, key=lambda t: t["return_pct"])
