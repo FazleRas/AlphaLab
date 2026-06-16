@@ -1,6 +1,7 @@
-import { ComposedChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { ComposedChart, Area, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
 
-const withDrawdown = (data) => {
+const buildChartData = (data, benchmark) => {
+  const benchByTime = new Map((benchmark || []).map(p => [p.timestamp, p.equity]));
   let peak = -Infinity;
   return data.map(point => {
     peak = Math.max(peak, point.equity);
@@ -9,16 +10,18 @@ const withDrawdown = (data) => {
       time: new Date(point.timestamp).getTime(),
       underwater: peak - point.equity,
       drawdownPct: peak > 0 ? ((point.equity - peak) / peak) * 100 : 0,
+      buyHold: benchByTime.get(point.timestamp),
     };
   });
 };
 
 const formatDate = (time) => new Date(time).toLocaleDateString();
 
-export default function EquityCurveChart({ data }) {
+export default function EquityCurveChart({ data, benchmark }) {
   if (!data || data.length === 0) return null;
 
-  const chartData = withDrawdown(data);
+  const chartData = buildChartData(data, benchmark);
+  const hasBenchmark = chartData.some(p => p.buyHold != null);
 
   return (
     <div className="rounded p-4 mb-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
@@ -48,13 +51,16 @@ export default function EquityCurveChart({ data }) {
             labelStyle={{ color: '#6b7280' }}
             labelFormatter={formatDate}
             formatter={(value, name, { payload }) => {
-              if (name === 'equity') return [`$${value.toLocaleString()} (${payload.drawdownPct.toFixed(2)}% dd)`, 'EQUITY'];
+              if (name === 'equity') return [`$${value.toLocaleString()} (${payload.drawdownPct.toFixed(2)}% dd)`, 'STRATEGY'];
+              if (name === 'buyHold') return [`$${value.toLocaleString()}`, 'BUY & HOLD'];
               return null;
             }}
           />
+          {hasBenchmark && <Legend wrapperStyle={{ fontFamily: 'monospace', fontSize: '11px' }} />}
           <Area
             type="monotone"
             dataKey="equity"
+            name="STRATEGY"
             stackId="equity"
             stroke="#2563eb"
             fill="#2563eb"
@@ -70,8 +76,21 @@ export default function EquityCurveChart({ data }) {
             fill="#ff4d6d"
             fillOpacity={0.15}
             isAnimationActive={false}
+            legendType="none"
             tooltipType="none"
           />
+          {hasBenchmark && (
+            <Line
+              type="monotone"
+              dataKey="buyHold"
+              name="BUY & HOLD"
+              stroke="#6b7280"
+              strokeWidth={1}
+              strokeDasharray="4 4"
+              dot={false}
+              isAnimationActive={false}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

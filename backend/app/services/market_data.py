@@ -164,7 +164,13 @@ def _to_iso(date_str: str) -> str:
 
 def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, sell_rsi: float = 70):
     data = get_indicators(ticker, period=period)
-    data = [d for d in data if d["rsi"] is not None and d["macd"] is not None]
+    # Drop rows missing indicators or a close price. yfinance includes the
+    # current (incomplete) trading day with a NaN close, which would otherwise
+    # poison buy & hold returns and break JSON serialization.
+    data = [
+        d for d in data
+        if d["rsi"] is not None and d["macd"] is not None and d["close"] == d["close"]
+    ]
 
     trades = []
     position = None
@@ -226,6 +232,28 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
     best_trade = max(trades, key=lambda t: t["return_pct"])
     worst_trade = min(trades, key=lambda t: t["return_pct"])
 
+    # Buy & hold benchmark: invest the same initial capital at the first close
+    # and mark to market at each point on the strategy's equity curve, so the
+    # two series share an x-axis and can be overlaid directly.
+    first_close = data[0]["close"]
+    close_by_date = {d["date"]: d["close"] for d in data}
+    buy_hold_curve = [
+        {
+            "timestamp": point["timestamp"],
+            "equity": round(INITIAL_CAPITAL * close_by_date[point["timestamp"][:10]] / first_close, 2),
+        }
+        for point in equity_curve
+    ]
+    buy_hold_return = round((data[-1]["close"] - first_close) / first_close * 100, 2)
+
+    # Max drawdown: largest peak-to-trough decline of the strategy equity curve
+    peak = -float("inf")
+    max_drawdown = 0.0
+    for point in equity_curve:
+        peak = max(peak, point["equity"])
+        drawdown = (point["equity"] - peak) / peak * 100
+        max_drawdown = min(max_drawdown, drawdown)
+
     return {
         "ticker": ticker.upper(),
         "period": period,
@@ -235,9 +263,12 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
         "total_return_pct": total_return,
         "num_trades": len(trades),
         "win_rate_pct": win_rate,
+        "max_drawdown_pct": round(max_drawdown, 2),
+        "buy_hold_return_pct": buy_hold_return,
         "best_trade": best_trade,
         "worst_trade": worst_trade,
         "trades": trades,
         "initial_capital": INITIAL_CAPITAL,
         "equity_curve": equity_curve,
+        "buy_hold_curve": buy_hold_curve,
     }
