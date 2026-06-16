@@ -179,6 +179,24 @@ INITIAL_CAPITAL = 10000.0
 def _to_iso(date_str: str) -> str:
     return f"{date_str}T00:00:00Z"
 
+def _benchmark_curve(equity_curve, close_by_date):
+    """Mark INITIAL_CAPITAL invested at the first equity-curve date to market
+    on each subsequent point, so a benchmark shares the strategy's x-axis.
+    Carries the last known close forward across any missing dates."""
+    dates = [point["timestamp"][:10] for point in equity_curve]
+    base = close_by_date.get(dates[0]) if dates else None
+    if not base:
+        return []
+    curve = []
+    last = base
+    for point, date in zip(equity_curve, dates):
+        last = close_by_date.get(date, last)
+        curve.append({
+            "timestamp": point["timestamp"],
+            "equity": round(INITIAL_CAPITAL * last / base, 2),
+        })
+    return curve
+
 def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, sell_rsi: float = 70):
     data = get_indicators(ticker, period=period)
     # Drop rows missing indicators or a close price. yfinance includes the
@@ -256,19 +274,21 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
     best_trade = max(trades, key=lambda t: t["return_pct"])
     worst_trade = min(trades, key=lambda t: t["return_pct"])
 
-    # Buy & hold benchmark: invest the same initial capital at the first close
-    # and mark to market at each point on the strategy's equity curve, so the
-    # two series share an x-axis and can be overlaid directly.
-    first_close = data[0]["close"]
+    # Buy & hold benchmark (same ticker) and SPY benchmark (the market),
+    # both mapped onto the strategy's equity-curve timestamps so they overlay
+    # directly on the chart.
     close_by_date = {d["date"]: d["close"] for d in data}
-    buy_hold_curve = [
-        {
-            "timestamp": point["timestamp"],
-            "equity": round(INITIAL_CAPITAL * close_by_date[point["timestamp"][:10]] / first_close, 2),
-        }
-        for point in equity_curve
-    ]
-    buy_hold_return = round((data[-1]["close"] - first_close) / first_close * 100, 2)
+    buy_hold_curve = _benchmark_curve(equity_curve, close_by_date)
+    buy_hold_return = round((buy_hold_curve[-1]["equity"] - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2) if buy_hold_curve else None
+
+    try:
+        spy_hist = get_history("SPY", period=period)
+        spy_by_date = {d["date"]: d["close"] for d in spy_hist}
+        spy_curve = _benchmark_curve(equity_curve, spy_by_date)
+        spy_return = round((spy_curve[-1]["equity"] - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2) if spy_curve else None
+    except Exception:
+        spy_curve = []
+        spy_return = None
 
     # Max drawdown: largest peak-to-trough decline of the strategy equity curve
     peak = -float("inf")
@@ -289,10 +309,12 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
         "win_rate_pct": win_rate,
         "max_drawdown_pct": round(max_drawdown, 2),
         "buy_hold_return_pct": buy_hold_return,
+        "spy_return_pct": spy_return,
         "best_trade": best_trade,
         "worst_trade": worst_trade,
         "trades": trades,
         "initial_capital": INITIAL_CAPITAL,
         "equity_curve": equity_curve,
         "buy_hold_curve": buy_hold_curve,
+        "spy_curve": spy_curve,
     }

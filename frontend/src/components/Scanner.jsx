@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import useColdStartHint from '../hooks/useColdStartHint';
 
 const API = 'https://alphalab-backend.onrender.com';
 
@@ -40,6 +41,7 @@ export default function Scanner() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const waking = useColdStartHint(loading);
 
   const toggleFilter = (key) => {
     setFilters(prev => ({
@@ -114,6 +116,11 @@ export default function Scanner() {
         </div>
       </div>
 
+      {waking && loading && (
+        <p className="font-mono text-sm mb-4" style={{ color: '#f97316' }}>
+          Waking up the backend — the first request after idle can take ~30s.
+        </p>
+      )}
       {error && <p className="font-mono text-sm mb-4" style={{ color: '#ff4d6d' }}>{error}</p>}
 
       {/* Results */}
