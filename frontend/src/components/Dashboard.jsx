@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import PriceChart from './PriceChart';
+import useColdStartHint from '../hooks/useColdStartHint';
 
 const API = 'https://alphalab-backend.onrender.com';
 
@@ -41,6 +42,7 @@ export default function Dashboard() {
   const [signals, setSignals] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const waking = useColdStartHint(loading);
 
   const search = async () => {
     if (!ticker) return;
@@ -85,6 +87,11 @@ export default function Dashboard() {
         </button>
       </div>
 
+      {waking && loading && (
+        <p className="font-mono text-sm mb-6" style={{ color: '#f97316' }}>
+          Waking up the backend — the first request after idle can take ~30s.
+        </p>
+      )}
       {error && <p className="font-mono text-sm mb-6" style={{ color: '#ff4d6d' }}>{error}</p>}
 
       {quote && (

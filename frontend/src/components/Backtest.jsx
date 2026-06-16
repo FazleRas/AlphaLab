@@ -1,5 +1,12 @@
 import { useState } from 'react';
 import EquityCurveChart from './EquityCurveChart';
+import useColdStartHint from '../hooks/useColdStartHint';
+
+const ColdStartHint = () => (
+  <p className="font-mono text-xs mb-4" style={{ color: '#f97316' }}>
+    Waking up the backend — the first request after idle can take ~30s.
+  </p>
+);
 
 const API = 'https://alphalab-backend.onrender.com';
 
@@ -19,6 +26,7 @@ export default function Backtest() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [strategy, setStrategy] = useState('rsi');
+  const waking = useColdStartHint(loading);
 
   const periods = ['6mo', '1y', '2y', '5y', 'max'];
 
@@ -133,11 +141,12 @@ export default function Backtest() {
         </button>
       </div>
 
+      {waking && loading && <ColdStartHint />}
       {error && <p className="font-mono text-sm mb-4" style={{ color: '#ff4d6d' }}>{error}</p>}
 
       {results && (
         <>
-          <EquityCurveChart data={results.equity_curve} benchmark={results.buy_hold_curve} />
+          <EquityCurveChart data={results.equity_curve} benchmark={results.buy_hold_curve} spy={results.spy_curve} />
 
           {/* Summary */}
           <div className="p-4 rounded mb-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
@@ -154,6 +163,19 @@ export default function Backtest() {
                 label="BUY & HOLD"
                 value={`${results.buy_hold_return_pct > 0 ? '+' : ''}${results.buy_hold_return_pct}%`}
               />
+              {results.spy_return_pct != null && (
+                <StatCard
+                  label="SPY"
+                  value={`${results.spy_return_pct > 0 ? '+' : ''}${results.spy_return_pct}%`}
+                />
+              )}
+              {results.buy_hold_return_pct != null && (
+                <StatCard
+                  label="ALPHA vs B&H"
+                  value={`${results.total_return_pct - results.buy_hold_return_pct > 0 ? '+' : ''}${(results.total_return_pct - results.buy_hold_return_pct).toFixed(2)}%`}
+                  color={results.total_return_pct - results.buy_hold_return_pct >= 0 ? '#00c896' : '#ff4d6d'}
+                />
+              )}
               <StatCard
                 label="MAX DRAWDOWN"
                 value={`${results.max_drawdown_pct}%`}
