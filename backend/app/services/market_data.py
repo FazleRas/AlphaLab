@@ -98,9 +98,21 @@ def get_indicators(ticker: str, period: str = "3mo"):
 def get_signals(ticker: str):
     data = get_indicators(ticker, period="6mo")
     
-    # grab the most recent day that has full indicator data
-    latest = next((d for d in reversed(data) if d["rsi"] is not None), None)
-    
+    # Grab the most recent day that has full indicator data. yfinance includes
+    # the current (incomplete) trading day with a NaN close but a valid RSI;
+    # selecting it would make the signal comparisons below raise on NaN/None.
+    def is_complete(d):
+        return (
+            d["rsi"] is not None
+            and d["sma_20"] is not None
+            and d["sma_50"] is not None
+            and d["macd"] is not None
+            and d["macd_signal"] is not None
+            and d["close"] == d["close"]
+        )
+
+    latest = next((d for d in reversed(data) if is_complete(d)), None)
+
     if not latest:
         return {"error": "not enough data to generate signals"}
     
