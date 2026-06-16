@@ -137,7 +137,7 @@ export default function Backtest() {
 
       {results && (
         <>
-          <EquityCurveChart data={results.equity_curve} />
+          <EquityCurveChart data={results.equity_curve} benchmark={results.buy_hold_curve} />
 
           {/* Summary */}
           <div className="p-4 rounded mb-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
@@ -148,7 +148,16 @@ export default function Backtest() {
               <StatCard
                 label="TOTAL RETURN"
                 value={`${results.total_return_pct > 0 ? '+' : ''}${results.total_return_pct}%`}
-                color={results.total_return_pct > 0 ? '#00c896' : '#ff4d6d'}
+                color={results.total_return_pct >= results.buy_hold_return_pct ? '#00c896' : '#ff4d6d'}
+              />
+              <StatCard
+                label="BUY & HOLD"
+                value={`${results.buy_hold_return_pct > 0 ? '+' : ''}${results.buy_hold_return_pct}%`}
+              />
+              <StatCard
+                label="MAX DRAWDOWN"
+                value={`${results.max_drawdown_pct}%`}
+                color={results.max_drawdown_pct < 0 ? '#ff4d6d' : '#6b7280'}
               />
               <StatCard label="NUM TRADES" value={results.num_trades} />
               <StatCard
