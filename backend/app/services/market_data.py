@@ -1,6 +1,11 @@
 from socket import close
 
+import statistics
+from datetime import date as _date
+
 import yfinance as yf
+
+TRADING_DAYS_PER_YEAR = 252
 
 def get_price(ticker: str):
     stock = yf.Ticker(ticker)
@@ -211,6 +216,7 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
     position = None
     equity = INITIAL_CAPITAL
     equity_curve = [{"timestamp": _to_iso(data[0]["date"]), "equity": equity}] if data else []
+    daily_equity = []  # mark-to-market each day, for Sharpe
 
     for day in data:
         rsi = day["rsi"]
@@ -263,6 +269,10 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
             equity_curve.append({"timestamp": _to_iso(date), "equity": round(equity, 2)})
             position = None
 
+        # Mark account to market each day: invested value while holding, cash otherwise.
+        held = equity * (close / position["buy_price"]) if position is not None else equity
+        daily_equity.append(held)
+
     if not trades:
         return {"error": "No trades were triggered with these parameters"}
 
@@ -298,6 +308,28 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
         drawdown = (point["equity"] - peak) / peak * 100
         max_drawdown = min(max_drawdown, drawdown)
 
+    # CAGR: annualized compounded return over the active period (first date to
+    # the last trade), consistent with total_return_pct.
+    start = _date.fromisoformat(data[0]["date"])
+    end = _date.fromisoformat(trades[-1]["sell_date"])
+    years = (end - start).days / 365.25
+    cagr = round(((equity / INITIAL_CAPITAL) ** (1 / years) - 1) * 100, 2) if years > 0 and equity > 0 else None
+
+    # Sharpe ratio: annualized, risk-free rate assumed 0. Uses daily mark-to-market
+    # returns so the thresholds line up with the usual <0 / 0-1 / 1-2 / >2 reading.
+    daily_returns = [
+        daily_equity[i] / daily_equity[i - 1] - 1
+        for i in range(1, len(daily_equity))
+        if daily_equity[i - 1] > 0
+    ]
+    if len(daily_returns) >= 2 and statistics.pstdev(daily_returns) > 0:
+        sharpe = round(
+            statistics.mean(daily_returns) / statistics.pstdev(daily_returns) * (TRADING_DAYS_PER_YEAR ** 0.5),
+            2,
+        )
+    else:
+        sharpe = None
+
     return {
         "ticker": ticker.upper(),
         "period": period,
@@ -305,6 +337,8 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
         "buy_rsi": buy_rsi,
         "sell_rsi": sell_rsi,
         "total_return_pct": total_return,
+        "cagr_pct": cagr,
+        "sharpe": sharpe,
         "num_trades": len(trades),
         "win_rate_pct": win_rate,
         "max_drawdown_pct": round(max_drawdown, 2),
