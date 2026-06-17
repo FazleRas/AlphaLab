@@ -202,23 +202,26 @@ def _benchmark_curve(equity_curve, close_by_date):
         })
     return curve
 
-def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, sell_rsi: float = 70):
-    data = get_indicators(ticker, period=period)
+def _clean_indicators(data):
     # Drop rows missing indicators or a close price. yfinance includes the
     # current (incomplete) trading day with a NaN close, which would otherwise
     # poison buy & hold returns and break JSON serialization.
-    data = [
+    return [
         d for d in data
         if d["rsi"] is not None and d["macd"] is not None and d["close"] == d["close"]
     ]
 
+def _simulate(rows, strategy: str, buy_rsi: float = 30, sell_rsi: float = 70):
+    """Pure backtest simulation over already-fetched, cleaned indicator rows.
+    No I/O — safe to call many times (e.g. a parameter sweep). Returns the core
+    results + metrics, or {"error": ...} on an unknown strategy / no trades."""
     trades = []
     position = None
     equity = INITIAL_CAPITAL
-    equity_curve = [{"timestamp": _to_iso(data[0]["date"]), "equity": equity}] if data else []
+    equity_curve = [{"timestamp": _to_iso(rows[0]["date"]), "equity": equity}] if rows else []
     daily_equity = []  # mark-to-market each day, for Sharpe
 
-    for day in data:
+    for day in rows:
         rsi = day["rsi"]
         close = day["close"]
         date = day["date"]
@@ -284,22 +287,6 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
     best_trade = max(trades, key=lambda t: t["return_pct"])
     worst_trade = min(trades, key=lambda t: t["return_pct"])
 
-    # Buy & hold benchmark (same ticker) and SPY benchmark (the market),
-    # both mapped onto the strategy's equity-curve timestamps so they overlay
-    # directly on the chart.
-    close_by_date = {d["date"]: d["close"] for d in data}
-    buy_hold_curve = _benchmark_curve(equity_curve, close_by_date)
-    buy_hold_return = round((buy_hold_curve[-1]["equity"] - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2) if buy_hold_curve else None
-
-    try:
-        spy_hist = get_history("SPY", period=period)
-        spy_by_date = {d["date"]: d["close"] for d in spy_hist}
-        spy_curve = _benchmark_curve(equity_curve, spy_by_date)
-        spy_return = round((spy_curve[-1]["equity"] - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2) if spy_curve else None
-    except Exception:
-        spy_curve = []
-        spy_return = None
-
     # Max drawdown: largest peak-to-trough decline of the strategy equity curve
     peak = -float("inf")
     max_drawdown = 0.0
@@ -310,7 +297,7 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
 
     # CAGR: annualized compounded return over the active period (first date to
     # the last trade), consistent with total_return_pct.
-    start = _date.fromisoformat(data[0]["date"])
+    start = _date.fromisoformat(rows[0]["date"])
     end = _date.fromisoformat(trades[-1]["sell_date"])
     years = (end - start).days / 365.25
     cagr = round(((equity / INITIAL_CAPITAL) ** (1 / years) - 1) * 100, 2) if years > 0 and equity > 0 else None
@@ -331,24 +318,94 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
         sharpe = None
 
     return {
-        "ticker": ticker.upper(),
-        "period": period,
-        "strategy": strategy,
-        "buy_rsi": buy_rsi,
-        "sell_rsi": sell_rsi,
         "total_return_pct": total_return,
         "cagr_pct": cagr,
         "sharpe": sharpe,
         "num_trades": len(trades),
         "win_rate_pct": win_rate,
         "max_drawdown_pct": round(max_drawdown, 2),
-        "buy_hold_return_pct": buy_hold_return,
-        "spy_return_pct": spy_return,
         "best_trade": best_trade,
         "worst_trade": worst_trade,
         "trades": trades,
+        "equity_curve": equity_curve,
+        "final_equity": equity,
+    }
+
+def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, sell_rsi: float = 70):
+    data = _clean_indicators(get_indicators(ticker, period=period))
+    sim = _simulate(data, strategy, buy_rsi, sell_rsi)
+    if "error" in sim:
+        return sim
+
+    # Buy & hold benchmark (same ticker) and SPY benchmark (the market), both
+    # mapped onto the strategy's equity-curve timestamps so they overlay directly.
+    equity_curve = sim["equity_curve"]
+    close_by_date = {d["date"]: d["close"] for d in data}
+    buy_hold_curve = _benchmark_curve(equity_curve, close_by_date)
+    buy_hold_return = round((buy_hold_curve[-1]["equity"] - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2) if buy_hold_curve else None
+
+    try:
+        spy_hist = get_history("SPY", period=period)
+        spy_by_date = {d["date"]: d["close"] for d in spy_hist}
+        spy_curve = _benchmark_curve(equity_curve, spy_by_date)
+        spy_return = round((spy_curve[-1]["equity"] - INITIAL_CAPITAL) / INITIAL_CAPITAL * 100, 2) if spy_curve else None
+    except Exception:
+        spy_curve = []
+        spy_return = None
+
+    return {
+        "ticker": ticker.upper(),
+        "period": period,
+        "strategy": strategy,
+        "buy_rsi": buy_rsi,
+        "sell_rsi": sell_rsi,
+        "total_return_pct": sim["total_return_pct"],
+        "cagr_pct": sim["cagr_pct"],
+        "sharpe": sim["sharpe"],
+        "num_trades": sim["num_trades"],
+        "win_rate_pct": sim["win_rate_pct"],
+        "max_drawdown_pct": sim["max_drawdown_pct"],
+        "buy_hold_return_pct": buy_hold_return,
+        "spy_return_pct": spy_return,
+        "best_trade": sim["best_trade"],
+        "worst_trade": sim["worst_trade"],
+        "trades": sim["trades"],
         "initial_capital": INITIAL_CAPITAL,
         "equity_curve": equity_curve,
         "buy_hold_curve": buy_hold_curve,
         "spy_curve": spy_curve,
+    }
+
+SWEEP_METRICS = ("total_return_pct", "cagr_pct", "sharpe", "win_rate_pct", "num_trades", "max_drawdown_pct")
+
+def run_sweep(ticker: str, period: str, strategy: str, buy_values, sell_values):
+    """Run the strategy across a grid of (buy_rsi, sell_rsi) values, fetching
+    indicators once and re-running the pure simulation per combo."""
+    if strategy not in ("rsi", "combined"):
+        return {"error": f"Sweep is only supported for rsi and combined strategies, not {strategy}"}
+
+    data = _clean_indicators(get_indicators(ticker, period=period))
+    if not data:
+        return {"error": "Not enough data to run a sweep"}
+
+    grid = []
+    best = None
+    for sell_rsi in sell_values:
+        for buy_rsi in buy_values:
+            sim = _simulate(data, strategy, buy_rsi, sell_rsi)
+            traded = "error" not in sim
+            cell = {"buy_rsi": buy_rsi, "sell_rsi": sell_rsi}
+            for m in SWEEP_METRICS:
+                cell[m] = sim[m] if traded else None
+            grid.append(cell)
+            if traded and (best is None or sim["total_return_pct"] > best["total_return_pct"]):
+                best = cell
+    return {
+        "ticker": ticker.upper(),
+        "period": period,
+        "strategy": strategy,
+        "buy_values": list(buy_values),
+        "sell_values": list(sell_values),
+        "grid": grid,
+        "best": best,
     }

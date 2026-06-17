@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import EquityCurveChart from './EquityCurveChart';
+import SweepHeatmap from './SweepHeatmap';
 import useColdStartHint from '../hooks/useColdStartHint';
 
 const ColdStartHint = () => (
@@ -35,16 +36,20 @@ export default function Backtest() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [strategy, setStrategy] = useState('rsi');
+  const [mode, setMode] = useState('single'); // 'single' | 'sweep'
+  const [sweepData, setSweepData] = useState(null);
+  const [sweepMetric, setSweepMetric] = useState('total_return_pct');
   const waking = useColdStartHint(loading);
 
   const periods = ['6mo', '1y', '2y', '5y', 'max'];
+  const sweepSupported = strategy === 'rsi' || strategy === 'combined';
 
-  const run = async () => {
+  const run = async (b = buyRsi, s = sellRsi) => {
     if (!ticker) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/backtest/${ticker}?period=${period}&strategy=${strategy}&buy_rsi=${buyRsi}&sell_rsi=${sellRsi}`);
+      const res = await fetch(`${API}/backtest/${ticker}?period=${period}&strategy=${strategy}&buy_rsi=${b}&sell_rsi=${s}`);
       const data = await res.json();
       if (data.error) {
         setError(data.error);
@@ -56,6 +61,38 @@ export default function Backtest() {
       setError('Failed to run backtest. Is your backend running?');
     }
     setLoading(false);
+  };
+
+  const runSweep = async () => {
+    if (!ticker) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/sweep/${ticker}?period=${period}&strategy=${strategy}`);
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        setSweepData(null);
+      } else {
+        setSweepData(data);
+      }
+    } catch (e) {
+      setError('Failed to run sweep. Is your backend running?');
+    }
+    setLoading(false);
+  };
+
+  // Click a heatmap cell → drill into a full single backtest of that combo.
+  const selectCell = (b, s) => {
+    setBuyRsi(b);
+    setSellRsi(s);
+    setMode('single');
+    run(b, s);
+  };
+
+  const pickStrategy = (key) => {
+    setStrategy(key);
+    if (key !== 'rsi' && key !== 'combined') setMode('single');
   };
 
   return (
@@ -71,7 +108,7 @@ export default function Backtest() {
             <input
               value={ticker}
               onChange={e => setTicker(e.target.value.toUpperCase())}
-              onKeyDown={e => e.key === 'Enter' && run()}
+              onKeyDown={e => e.key === 'Enter' && (mode === 'sweep' ? runSweep() : run())}
               placeholder="AAPL"
               className="w-full px-3 py-2 font-mono text-sm rounded outline-none"
               style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
@@ -90,7 +127,7 @@ export default function Backtest() {
               ))}
             </select>
           </div>
-          {(strategy === 'rsi' || strategy === 'combined') && (
+          {sweepSupported && mode === 'single' && (
             <>
               <div>
                 <p className="font-mono text-xs mb-1" style={{ color: '#6b7280' }}>BUY RSI BELOW</p>
@@ -127,7 +164,7 @@ export default function Backtest() {
             ].map(s => (
               <button
                 key={s.key}
-                onClick={() => setStrategy(s.key)}
+                onClick={() => pickStrategy(s.key)}
                 className="px-3 py-1 font-mono text-xs rounded"
                 style={{
                   backgroundColor: strategy === s.key ? '#2563eb20' : 'transparent',
@@ -141,19 +178,77 @@ export default function Backtest() {
           </div>
         </div>
 
+        <div className="mb-4">
+          <p className="font-mono text-xs mb-2" style={{ color: '#6b7280' }}>MODE</p>
+          <div className="flex gap-2">
+            {[
+              { key: 'single', label: 'SINGLE RUN' },
+              { key: 'sweep', label: 'PARAMETER SWEEP' },
+            ].map(m => {
+              const disabled = m.key === 'sweep' && !sweepSupported;
+              return (
+                <button
+                  key={m.key}
+                  onClick={() => !disabled && setMode(m.key)}
+                  disabled={disabled}
+                  title={disabled ? 'Sweep is available for RSI and RSI + MACD strategies' : undefined}
+                  className="px-3 py-1 font-mono text-xs rounded"
+                  style={{
+                    backgroundColor: mode === m.key ? '#2563eb20' : 'transparent',
+                    border: `1px solid ${mode === m.key ? '#2563eb' : '#1e1e2e'}`,
+                    color: disabled ? '#3a3a44' : (mode === m.key ? '#2563eb' : '#6b7280'),
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {m.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <button
-          onClick={run}
+          onClick={() => (mode === 'sweep' ? runSweep() : run())}
           className="w-full py-3 font-mono text-sm rounded"
           style={{ backgroundColor: '#2563eb', color: '#fff' }}
         >
-          {loading ? 'RUNNING BACKTEST...' : 'RUN BACKTEST'}
+          {loading
+            ? (mode === 'sweep' ? 'RUNNING SWEEP...' : 'RUNNING BACKTEST...')
+            : (mode === 'sweep' ? 'RUN SWEEP' : 'RUN BACKTEST')}
         </button>
       </div>
 
       {waking && loading && <ColdStartHint />}
       {error && <p className="font-mono text-sm mb-4" style={{ color: '#ff4d6d' }}>{error}</p>}
 
-      {results && (
+      {mode === 'sweep' && sweepData && (
+        <>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="font-mono text-xs" style={{ color: '#6b7280' }}>COLOR BY</span>
+            {[
+              { key: 'total_return_pct', label: 'RETURN' },
+              { key: 'sharpe', label: 'SHARPE' },
+              { key: 'win_rate_pct', label: 'WIN RATE' },
+            ].map(m => (
+              <button
+                key={m.key}
+                onClick={() => setSweepMetric(m.key)}
+                className="px-3 py-1 font-mono text-xs rounded"
+                style={{
+                  backgroundColor: sweepMetric === m.key ? '#2563eb20' : 'transparent',
+                  border: `1px solid ${sweepMetric === m.key ? '#2563eb' : '#1e1e2e'}`,
+                  color: sweepMetric === m.key ? '#2563eb' : '#6b7280',
+                }}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <SweepHeatmap data={sweepData} metric={sweepMetric} onSelect={selectCell} />
+        </>
+      )}
+
+      {mode === 'single' && results && (
         <>
           <EquityCurveChart data={results.equity_curve} benchmark={results.buy_hold_curve} spy={results.spy_curve} />
 
