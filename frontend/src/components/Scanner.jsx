@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import useColdStartHint from '../hooks/useColdStartHint';
-
-const API = 'https://alphalab-backend.onrender.com';
+import API from '../config';
 
 const signals = [
   { key: 'bullish_trend', label: 'BULLISH TREND' },
@@ -24,16 +23,6 @@ const macdColor = (histogram) => {
   if (!histogram) return '#e2e2e2';
   return histogram > 0 ? '#00c896' : '#ff4d6d';
 };
-/*
-const SignalBadge = ({ value }) => (
-  <span className="font-mono text-xs px-2 py-1 rounded"
-    style={{
-      backgroundColor: value ? '#00c89620' : '#ff4d6d20',
-      color: value ? '#00c896' : '#ff4d6d',
-    }}>
-    {value ? 'YES' : 'NO'}
-  </span>
-); */
 
 export default function Scanner() {
   const [tickers, setTickers] = useState('');
@@ -62,7 +51,6 @@ export default function Scanner() {
       const url = `${API}/scan?tickers=${tickers}${activeFilters ? '&' + activeFilters : ''}`;
       const res = await fetch(url);
       const data = await res.json();
-      console.log('results received:', data.results.length, data.results.map(r => r.ticker));
       setResults(data.results);
     } catch (e) {
       setError('Failed to scan. Is your backend running?');

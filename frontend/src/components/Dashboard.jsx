@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import PriceChart from './PriceChart';
 import useColdStartHint from '../hooks/useColdStartHint';
-
-const API = 'https://alphalab-backend.onrender.com';
+import API from '../config';
 
 const StatCard = ({ label, value, color }) => (
   <div className="p-3 rounded" style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e' }}>

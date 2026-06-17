@@ -2,14 +2,13 @@ import { useState } from 'react';
 import EquityCurveChart from './EquityCurveChart';
 import SweepHeatmap from './SweepHeatmap';
 import useColdStartHint from '../hooks/useColdStartHint';
+import API from '../config';
 
 const ColdStartHint = () => (
   <p className="font-mono text-xs mb-4" style={{ color: '#f97316' }}>
     Waking up the backend — the first request after idle can take ~30s.
   </p>
 );
-
-const API = 'https://alphalab-backend.onrender.com';
 
 const StatCard = ({ label, value, color }) => (
   <div className="p-3 rounded" style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e' }}>

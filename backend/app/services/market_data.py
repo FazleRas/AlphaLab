@@ -1,5 +1,3 @@
-from socket import close
-
 import statistics
 from datetime import date as _date
 
@@ -155,14 +153,13 @@ def get_signals(ticker: str):
     }
 
 def scan_tickers(tickers: list[str], filters: dict):
-    print("FILTERS RECEIVED:", filters)
     results = []
     for ticker in tickers:
         try:
             signals = get_signals(ticker)
             if "error" in signals:
                 continue
-            
+
             active_filters = {k: v for k, v in filters.items() if v == True}
 
             if not active_filters:
@@ -170,9 +167,6 @@ def scan_tickers(tickers: list[str], filters: dict):
             else:
                 match = all(signals["signals"].get(f) == True for f in active_filters)
 
-            print(f"{ticker} bearish_trend:", signals["signals"].get("bearish_trend"))
-            print(f"{ticker} match:", match)
-            
             if match:
                 results.append(signals)
         except Exception:
