@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { LineChart, BarChart, Line, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceDot, ReferenceArea } from 'recharts';
-
-const API = 'https://alphalab-backend.onrender.com';
+import API from '../config';
 
 export default function PriceChart({ ticker }) {
     const [data, setData] = useState([]);
