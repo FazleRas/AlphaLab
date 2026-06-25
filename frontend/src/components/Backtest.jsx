@@ -94,6 +94,22 @@ export default function Backtest() {
     if (key !== 'rsi' && key !== 'combined') setMode('single');
   };
 
+  // Export the trade history to a CSV the user can open in Excel/Sheets.
+  const downloadCsv = () => {
+    if (!results || !results.trades) return;
+    const cols = ['buy_date', 'buy_price', 'sell_date', 'sell_price', 'return_pct', 'pnl', 'equity_after', 'win'];
+    const header = ['#', ...cols].join(',');
+    const rows = results.trades.map((t, i) => [i + 1, ...cols.map(c => t[c])].join(','));
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${results.ticker}_${results.strategy}_trades.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="max-w-4xl mx-auto">
 
@@ -320,7 +336,16 @@ export default function Backtest() {
 
           {/* Trade History */}
           <div className="rounded p-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
-            <p className="font-mono text-xs mb-4 tracking-widest" style={{ color: '#6b7280' }}>TRADE HISTORY</p>
+            <div className="flex items-center justify-between mb-4">
+              <p className="font-mono text-xs tracking-widest" style={{ color: '#6b7280' }}>TRADE HISTORY</p>
+              <button
+                onClick={downloadCsv}
+                className="px-3 py-1 font-mono text-xs rounded"
+                style={{ border: '1px solid #1e1e2e', color: '#6b7280' }}
+              >
+                EXPORT CSV
+              </button>
+            </div>
             <div className="space-y-2">
               {results.trades.map((trade, i) => (
                 <div key={i} className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid #1e1e2e' }}>
