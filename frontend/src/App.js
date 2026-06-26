@@ -3,8 +3,22 @@ import Dashboard from './components/Dashboard';
 import Scanner from './components/Scanner';
 import Backtest from './components/Backtest';
 
+const TABS = ['dashboard', 'scanner', 'backtest'];
+
+const getInitialTab = () => {
+  const v = new URLSearchParams(window.location.search).get('view');
+  return TABS.includes(v) ? v : 'dashboard';
+};
+
 function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(getInitialTab);
+
+  const selectTab = (tab) => {
+    setActiveTab(tab);
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', tab);
+    window.history.replaceState(null, '', `?${params.toString()}`);
+  };
 
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#0a0a0f', color: '#e2e2e2' }}>
@@ -13,10 +27,10 @@ function App() {
         <span className="font-mono text-xs" style={{ color: '#6b7280' }}>MARKET INTELLIGENCE</span>
       </div>
       <div style={{ borderBottom: '1px solid #1e1e2e' }} className="px-8 flex gap-8">
-        {['dashboard', 'scanner', 'backtest'].map(tab => (
+        {TABS.map(tab => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => selectTab(tab)}
             className="py-3 font-mono text-sm tracking-wider uppercase transition-all"
             style={{
               color: activeTab === tab ? '#2563eb' : '#6b7280',

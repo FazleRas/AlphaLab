@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import EquityCurveChart from './EquityCurveChart';
 import SweepHeatmap from './SweepHeatmap';
 import useColdStartHint from '../hooks/useColdStartHint';
@@ -38,23 +38,36 @@ export default function Backtest() {
   const [mode, setMode] = useState('single'); // 'single' | 'sweep'
   const [sweepData, setSweepData] = useState(null);
   const [sweepMetric, setSweepMetric] = useState('total_return_pct');
+  const [copied, setCopied] = useState(false);
   const waking = useColdStartHint(loading);
 
   const periods = ['6mo', '1y', '2y', '5y', 'max'];
   const sweepSupported = strategy === 'rsi' || strategy === 'combined';
 
-  const run = async (b = buyRsi, s = sellRsi) => {
-    if (!ticker) return;
+  // Reflect the current run in the URL so it's shareable/bookmarkable.
+  const syncUrl = (params) => {
+    const q = new URLSearchParams({ view: 'backtest', ...params });
+    window.history.replaceState(null, '', `?${q.toString()}`);
+  };
+
+  const run = async (opts = {}) => {
+    const tk = (opts.ticker ?? ticker).toUpperCase();
+    const per = opts.period ?? period;
+    const strat = opts.strategy ?? strategy;
+    const b = opts.buyRsi ?? buyRsi;
+    const s = opts.sellRsi ?? sellRsi;
+    if (!tk) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/backtest/${ticker}?period=${period}&strategy=${strategy}&buy_rsi=${b}&sell_rsi=${s}`);
+      const res = await fetch(`${API}/backtest/${tk}?period=${per}&strategy=${strat}&buy_rsi=${b}&sell_rsi=${s}`);
       const data = await res.json();
       if (data.error) {
         setError(data.error);
         setResults(null);
       } else {
         setResults(data);
+        syncUrl({ ticker: tk, period: per, strategy: strat, buy_rsi: b, sell_rsi: s, mode: 'single' });
       }
     } catch (e) {
       setError('Failed to run backtest. Is your backend running?');
@@ -62,18 +75,22 @@ export default function Backtest() {
     setLoading(false);
   };
 
-  const runSweep = async () => {
-    if (!ticker) return;
+  const runSweep = async (opts = {}) => {
+    const tk = (opts.ticker ?? ticker).toUpperCase();
+    const per = opts.period ?? period;
+    const strat = opts.strategy ?? strategy;
+    if (!tk) return;
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API}/sweep/${ticker}?period=${period}&strategy=${strategy}`);
+      const res = await fetch(`${API}/sweep/${tk}?period=${per}&strategy=${strat}`);
       const data = await res.json();
       if (data.error) {
         setError(data.error);
         setSweepData(null);
       } else {
         setSweepData(data);
+        syncUrl({ ticker: tk, period: per, strategy: strat, mode: 'sweep' });
       }
     } catch (e) {
       setError('Failed to run sweep. Is your backend running?');
@@ -86,8 +103,34 @@ export default function Backtest() {
     setBuyRsi(b);
     setSellRsi(s);
     setMode('single');
-    run(b, s);
+    run({ buyRsi: b, sellRsi: s });
   };
+
+  const copyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  // On load, restore a shared backtest from the URL and run it automatically.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    const tk = p.get('ticker');
+    if (!tk) return;
+    const per = p.get('period') || '2y';
+    const strat = p.get('strategy') || 'rsi';
+    const b = p.get('buy_rsi'); const s = p.get('sell_rsi');
+    const md = p.get('mode') === 'sweep' ? 'sweep' : 'single';
+    setTicker(tk.toUpperCase());
+    setPeriod(per);
+    setStrategy(strat);
+    setMode(md);
+    if (b != null) setBuyRsi(b);
+    if (s != null) setSellRsi(s);
+    if (md === 'sweep') runSweep({ ticker: tk, period: per, strategy: strat });
+    else run({ ticker: tk, period: per, strategy: strat, buyRsi: b ?? 30, sellRsi: s ?? 70 });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const pickStrategy = (key) => {
     setStrategy(key);
@@ -222,15 +265,26 @@ export default function Backtest() {
           </div>
         </div>
 
-        <button
-          onClick={() => (mode === 'sweep' ? runSweep() : run())}
-          className="w-full py-3 font-mono text-sm rounded"
-          style={{ backgroundColor: '#2563eb', color: '#fff' }}
-        >
-          {loading
-            ? (mode === 'sweep' ? 'RUNNING SWEEP...' : 'RUNNING BACKTEST...')
-            : (mode === 'sweep' ? 'RUN SWEEP' : 'RUN BACKTEST')}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => (mode === 'sweep' ? runSweep() : run())}
+            className="flex-1 py-3 font-mono text-sm rounded"
+            style={{ backgroundColor: '#2563eb', color: '#fff' }}
+          >
+            {loading
+              ? (mode === 'sweep' ? 'RUNNING SWEEP...' : 'RUNNING BACKTEST...')
+              : (mode === 'sweep' ? 'RUN SWEEP' : 'RUN BACKTEST')}
+          </button>
+          {(results || sweepData) && (
+            <button
+              onClick={copyLink}
+              className="px-4 py-3 font-mono text-sm rounded"
+              style={{ border: '1px solid #1e1e2e', color: copied ? '#00c896' : '#6b7280' }}
+            >
+              {copied ? 'COPIED' : 'COPY LINK'}
+            </button>
+          )}
+        </div>
       </div>
 
       {waking && loading && <ColdStartHint />}
