@@ -372,6 +372,22 @@ def run_backtest(ticker: str, period: str, strategy: str, buy_rsi: float = 30, s
 
 SWEEP_METRICS = ("total_return_pct", "cagr_pct", "sharpe", "win_rate_pct", "num_trades", "max_drawdown_pct")
 
+def _metrics_cell(rows, strategy, buy_rsi, sell_rsi):
+    """Run one simulation and flatten it to a metrics dict (None-filled if no trades)."""
+    sim = _simulate(rows, strategy, buy_rsi, sell_rsi)
+    traded = "error" not in sim
+    cell = {"buy_rsi": buy_rsi, "sell_rsi": sell_rsi}
+    for m in SWEEP_METRICS:
+        cell[m] = sim[m] if traded else None
+    return cell
+
+def _grid_cells(rows, strategy, buy_values, sell_values):
+    return [
+        _metrics_cell(rows, strategy, buy_rsi, sell_rsi)
+        for sell_rsi in sell_values
+        for buy_rsi in buy_values
+    ]
+
 def run_sweep(ticker: str, period: str, strategy: str, buy_values, sell_values):
     """Run the strategy across a grid of (buy_rsi, sell_rsi) values, fetching
     indicators once and re-running the pure simulation per combo."""
@@ -382,18 +398,9 @@ def run_sweep(ticker: str, period: str, strategy: str, buy_values, sell_values):
     if not data:
         return {"error": "Not enough data to run a sweep"}
 
-    grid = []
-    best = None
-    for sell_rsi in sell_values:
-        for buy_rsi in buy_values:
-            sim = _simulate(data, strategy, buy_rsi, sell_rsi)
-            traded = "error" not in sim
-            cell = {"buy_rsi": buy_rsi, "sell_rsi": sell_rsi}
-            for m in SWEEP_METRICS:
-                cell[m] = sim[m] if traded else None
-            grid.append(cell)
-            if traded and (best is None or sim["total_return_pct"] > best["total_return_pct"]):
-                best = cell
+    grid = _grid_cells(data, strategy, buy_values, sell_values)
+    traded = [c for c in grid if c["total_return_pct"] is not None]
+    best = max(traded, key=lambda c: c["total_return_pct"]) if traded else None
     return {
         "ticker": ticker.upper(),
         "period": period,
@@ -402,4 +409,57 @@ def run_sweep(ticker: str, period: str, strategy: str, buy_values, sell_values):
         "sell_values": list(sell_values),
         "grid": grid,
         "best": best,
+    }
+
+def run_validation(ticker: str, period: str, strategy: str, buy_values, sell_values,
+                   split: float = 0.7, top_n: int = 3):
+    """Out-of-sample validation: sweep the parameter grid on the earlier (train)
+    slice of history, then re-run the top combos on the later (test) slice they
+    never saw. Indicators are computed over the full series BEFORE slicing,
+    which is causally sound (rolling windows only look backward) and avoids a
+    cold warm-up gap at the start of the test window."""
+    if strategy not in ("rsi", "combined"):
+        return {"error": f"Validation is only supported for rsi and combined strategies, not {strategy}"}
+
+    data = _clean_indicators(get_indicators(ticker, period=period))
+    split_idx = int(len(data) * split)
+    train, test = data[:split_idx], data[split_idx:]
+    # Each slice needs enough rows for a strategy to plausibly trade.
+    if len(train) < 60 or len(test) < 30:
+        return {"error": "Not enough data to split into train and test windows"}
+
+    train_grid = _grid_cells(train, strategy, buy_values, sell_values)
+    winners = sorted(
+        (c for c in train_grid if c["total_return_pct"] is not None),
+        key=lambda c: c["total_return_pct"],
+        reverse=True,
+    )[:top_n]
+    if not winners:
+        return {"error": "No parameter combination traded in the train window"}
+
+    results = [
+        {
+            "buy_rsi": c["buy_rsi"],
+            "sell_rsi": c["sell_rsi"],
+            "train": {m: c[m] for m in SWEEP_METRICS},
+            "test": {m: t[m] for m in SWEEP_METRICS},
+        }
+        for c in winners
+        for t in [_metrics_cell(test, strategy, c["buy_rsi"], c["sell_rsi"])]
+    ]
+
+    # Buy & hold over the test window, for context on what "doing nothing" earned.
+    test_bh = round((test[-1]["close"] - test[0]["close"]) / test[0]["close"] * 100, 2)
+
+    return {
+        "ticker": ticker.upper(),
+        "period": period,
+        "strategy": strategy,
+        "split": split,
+        "train_start": train[0]["date"],
+        "train_end": train[-1]["date"],
+        "test_start": test[0]["date"],
+        "test_end": test[-1]["date"],
+        "test_buy_hold_return_pct": test_bh,
+        "results": results,
     }

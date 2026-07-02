@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 from typing import Optional
-from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest, run_sweep
+from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest, run_sweep, run_validation
 
 router = APIRouter()
 
@@ -89,3 +89,27 @@ def sweep(
     if len(buy_values) * len(sell_values) > MAX_SWEEP_CELLS:
         return {"error": f"Sweep grid too large (max {MAX_SWEEP_CELLS} cells)"}
     return run_sweep(ticker.upper(), period, strategy, buy_values, sell_values)
+
+@router.get("/validate/{ticker}")
+def validate(
+    ticker: str,
+    period: str = "2y",
+    strategy: str = "rsi",
+    buy_min: float = 20,
+    buy_max: float = 40,
+    buy_step: float = 5,
+    sell_min: float = 60,
+    sell_max: float = 80,
+    sell_step: float = 5,
+    split: float = 0.7,
+    top_n: int = 3,
+):
+    buy_values = _frange(buy_min, buy_max, buy_step)
+    sell_values = _frange(sell_min, sell_max, sell_step)
+    if not buy_values or not sell_values:
+        return {"error": "Invalid sweep range"}
+    if len(buy_values) * len(sell_values) > MAX_SWEEP_CELLS:
+        return {"error": f"Sweep grid too large (max {MAX_SWEEP_CELLS} cells)"}
+    split = min(max(split, 0.5), 0.9)
+    top_n = min(max(top_n, 1), 5)
+    return run_validation(ticker.upper(), period, strategy, buy_values, sell_values, split, top_n)
