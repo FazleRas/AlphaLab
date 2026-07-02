@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Query
 from typing import Optional
-from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest, run_sweep, run_validation
+from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest, run_sweep, run_validation, run_compare
 
 router = APIRouter()
 
@@ -113,3 +113,12 @@ def validate(
     split = min(max(split, 0.5), 0.9)
     top_n = min(max(top_n, 1), 5)
     return run_validation(ticker.upper(), period, strategy, buy_values, sell_values, split, top_n)
+
+@router.get("/compare/{ticker}")
+def compare(
+    ticker: str,
+    period: str = "2y",
+    buy_rsi: float = 30,
+    sell_rsi: float = 70,
+):
+    return run_compare(ticker.upper(), period, buy_rsi, sell_rsi)

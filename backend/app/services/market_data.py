@@ -463,3 +463,42 @@ def run_validation(ticker: str, period: str, strategy: str, buy_values, sell_val
         "test_buy_hold_return_pct": test_bh,
         "results": results,
     }
+
+COMPARE_STRATEGIES = ("rsi", "macd", "combined", "golden_cross")
+
+def run_compare(ticker: str, period: str, buy_rsi: float = 30, sell_rsi: float = 70):
+    """Race every strategy on the same ticker and window: one indicator fetch,
+    one _simulate per strategy, all equity curves + metrics side by side. The
+    RSI thresholds apply to the strategies that use them (rsi, combined)."""
+    data = _clean_indicators(get_indicators(ticker, period=period))
+    if not data:
+        return {"error": "Not enough data to compare strategies"}
+
+    strategies = []
+    for strat in COMPARE_STRATEGIES:
+        sim = _simulate(data, strat, buy_rsi, sell_rsi)
+        traded = "error" not in sim
+        entry = {"strategy": strat}
+        for m in SWEEP_METRICS:
+            entry[m] = sim[m] if traded else None
+        entry["equity_curve"] = sim["equity_curve"] if traded else []
+        strategies.append(entry)
+
+    # Daily buy & hold curve (every close, not just trade dates) as the anchor line.
+    first_close = data[0]["close"]
+    buy_hold_curve = [
+        {"timestamp": _to_iso(d["date"]), "equity": round(INITIAL_CAPITAL * d["close"] / first_close, 2)}
+        for d in data
+    ]
+    buy_hold_return = round((data[-1]["close"] - first_close) / first_close * 100, 2)
+
+    return {
+        "ticker": ticker.upper(),
+        "period": period,
+        "buy_rsi": buy_rsi,
+        "sell_rsi": sell_rsi,
+        "strategies": strategies,
+        "buy_hold_curve": buy_hold_curve,
+        "buy_hold_return_pct": buy_hold_return,
+        "initial_capital": INITIAL_CAPITAL,
+    }
