@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import EquityCurveChart from './EquityCurveChart';
 import SweepHeatmap from './SweepHeatmap';
+import ValidationPanel from './ValidationPanel';
 import useColdStartHint from '../hooks/useColdStartHint';
 import API from '../config';
 
@@ -38,6 +39,8 @@ export default function Backtest() {
   const [mode, setMode] = useState('single'); // 'single' | 'sweep'
   const [sweepData, setSweepData] = useState(null);
   const [sweepMetric, setSweepMetric] = useState('total_return_pct');
+  const [validation, setValidation] = useState(null);
+  const [validating, setValidating] = useState(false);
   const [copied, setCopied] = useState(false);
   const waking = useColdStartHint(loading);
 
@@ -90,12 +93,33 @@ export default function Backtest() {
         setSweepData(null);
       } else {
         setSweepData(data);
+        setValidation(null); // stale validation belongs to the previous sweep
         syncUrl({ ticker: tk, period: per, strategy: strat, mode: 'sweep' });
       }
     } catch (e) {
       setError('Failed to run sweep. Is your backend running?');
     }
     setLoading(false);
+  };
+
+  // Re-run the sweep's top combos on a held-out test window they never saw.
+  const runValidation = async () => {
+    if (!sweepData) return;
+    setValidating(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/validate/${sweepData.ticker}?period=${sweepData.period}&strategy=${sweepData.strategy}`);
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        setValidation(null);
+      } else {
+        setValidation(data);
+      }
+    } catch (e) {
+      setError('Failed to run validation. Is your backend running?');
+    }
+    setValidating(false);
   };
 
   // Click a heatmap cell → drill into a full single backtest of that combo.
@@ -314,6 +338,18 @@ export default function Backtest() {
             ))}
           </div>
           <SweepHeatmap data={sweepData} metric={sweepMetric} onSelect={selectCell} />
+
+          {!validation && (
+            <button
+              onClick={runValidation}
+              disabled={validating}
+              className="w-full py-3 mb-4 font-mono text-sm rounded"
+              style={{ border: '1px solid #2563eb', color: '#2563eb', backgroundColor: 'transparent' }}
+            >
+              {validating ? 'VALIDATING OUT-OF-SAMPLE...' : 'VALIDATE TOP 3 OUT-OF-SAMPLE'}
+            </button>
+          )}
+          <ValidationPanel data={validation} />
         </>
       )}
 
