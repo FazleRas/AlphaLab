@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import EquityCurveChart from './EquityCurveChart';
 import SweepHeatmap from './SweepHeatmap';
 import ValidationPanel from './ValidationPanel';
+import CompareView from './CompareView';
 import useColdStartHint from '../hooks/useColdStartHint';
 import API from '../config';
 
@@ -36,8 +37,9 @@ export default function Backtest() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [strategy, setStrategy] = useState('rsi');
-  const [mode, setMode] = useState('single'); // 'single' | 'sweep'
+  const [mode, setMode] = useState('single'); // 'single' | 'sweep' | 'compare'
   const [sweepData, setSweepData] = useState(null);
+  const [compareData, setCompareData] = useState(null);
   const [sweepMetric, setSweepMetric] = useState('total_return_pct');
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -102,6 +104,31 @@ export default function Backtest() {
     setLoading(false);
   };
 
+  // Race all four strategies on the same ticker and window.
+  const runCompare = async (opts = {}) => {
+    const tk = (opts.ticker ?? ticker).toUpperCase();
+    const per = opts.period ?? period;
+    const b = opts.buyRsi ?? buyRsi;
+    const s = opts.sellRsi ?? sellRsi;
+    if (!tk) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API}/compare/${tk}?period=${per}&buy_rsi=${b}&sell_rsi=${s}`);
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        setCompareData(null);
+      } else {
+        setCompareData(data);
+        syncUrl({ ticker: tk, period: per, buy_rsi: b, sell_rsi: s, mode: 'compare' });
+      }
+    } catch (e) {
+      setError('Failed to run comparison. Is your backend running?');
+    }
+    setLoading(false);
+  };
+
   // Re-run the sweep's top combos on a held-out test window they never saw.
   const runValidation = async () => {
     if (!sweepData) return;
@@ -130,6 +157,12 @@ export default function Backtest() {
     run({ buyRsi: b, sellRsi: s });
   };
 
+  const runCurrent = () => {
+    if (mode === 'sweep') runSweep();
+    else if (mode === 'compare') runCompare();
+    else run();
+  };
+
   const copyLink = () => {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
@@ -144,7 +177,7 @@ export default function Backtest() {
     const per = p.get('period') || '2y';
     const strat = p.get('strategy') || 'rsi';
     const b = p.get('buy_rsi'); const s = p.get('sell_rsi');
-    const md = p.get('mode') === 'sweep' ? 'sweep' : 'single';
+    const md = ['sweep', 'compare'].includes(p.get('mode')) ? p.get('mode') : 'single';
     setTicker(tk.toUpperCase());
     setPeriod(per);
     setStrategy(strat);
@@ -152,13 +185,14 @@ export default function Backtest() {
     if (b != null) setBuyRsi(b);
     if (s != null) setSellRsi(s);
     if (md === 'sweep') runSweep({ ticker: tk, period: per, strategy: strat });
+    else if (md === 'compare') runCompare({ ticker: tk, period: per, buyRsi: b ?? 30, sellRsi: s ?? 70 });
     else run({ ticker: tk, period: per, strategy: strat, buyRsi: b ?? 30, sellRsi: s ?? 70 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const pickStrategy = (key) => {
     setStrategy(key);
-    if (key !== 'rsi' && key !== 'combined') setMode('single');
+    if (key !== 'rsi' && key !== 'combined' && mode === 'sweep') setMode('single');
   };
 
   // Export the trade history to a CSV the user can open in Excel/Sheets.
@@ -190,7 +224,7 @@ export default function Backtest() {
             <input
               value={ticker}
               onChange={e => setTicker(e.target.value.toUpperCase())}
-              onKeyDown={e => e.key === 'Enter' && (mode === 'sweep' ? runSweep() : run())}
+              onKeyDown={e => e.key === 'Enter' && runCurrent()}
               placeholder="AAPL"
               className="w-full px-3 py-2 font-mono text-sm rounded outline-none"
               style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
@@ -209,7 +243,7 @@ export default function Backtest() {
               ))}
             </select>
           </div>
-          {sweepSupported && mode === 'single' && (
+          {((sweepSupported && mode === 'single') || mode === 'compare') && (
             <>
               <div>
                 <p className="font-mono text-xs mb-1" style={{ color: '#6b7280' }}>BUY RSI BELOW</p>
@@ -235,6 +269,7 @@ export default function Backtest() {
           )}
         </div>
 
+        {mode !== 'compare' && (
         <div className="mb-4">
           <p className="font-mono text-xs mb-2" style={{ color: '#6b7280' }}>STRATEGY</p>
           <div className="flex gap-2 flex-wrap">
@@ -259,13 +294,15 @@ export default function Backtest() {
             ))}
           </div>
         </div>
+        )}
 
         <div className="mb-4">
           <p className="font-mono text-xs mb-2" style={{ color: '#6b7280' }}>MODE</p>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             {[
               { key: 'single', label: 'SINGLE RUN' },
               { key: 'sweep', label: 'PARAMETER SWEEP' },
+              { key: 'compare', label: 'COMPARE ALL' },
             ].map(m => {
               const disabled = m.key === 'sweep' && !sweepSupported;
               return (
@@ -291,15 +328,15 @@ export default function Backtest() {
 
         <div className="flex gap-2">
           <button
-            onClick={() => (mode === 'sweep' ? runSweep() : run())}
+            onClick={runCurrent}
             className="flex-1 py-3 font-mono text-sm rounded"
             style={{ backgroundColor: '#2563eb', color: '#fff' }}
           >
             {loading
-              ? (mode === 'sweep' ? 'RUNNING SWEEP...' : 'RUNNING BACKTEST...')
-              : (mode === 'sweep' ? 'RUN SWEEP' : 'RUN BACKTEST')}
+              ? { single: 'RUNNING BACKTEST...', sweep: 'RUNNING SWEEP...', compare: 'COMPARING STRATEGIES...' }[mode]
+              : { single: 'RUN BACKTEST', sweep: 'RUN SWEEP', compare: 'COMPARE ALL STRATEGIES' }[mode]}
           </button>
-          {(results || sweepData) && (
+          {(results || sweepData || compareData) && (
             <button
               onClick={copyLink}
               className="px-4 py-3 font-mono text-sm rounded"
@@ -313,6 +350,8 @@ export default function Backtest() {
 
       {waking && loading && <ColdStartHint />}
       {error && <p className="font-mono text-sm mb-4" style={{ color: '#ff4d6d' }}>{error}</p>}
+
+      {mode === 'compare' && compareData && <CompareView data={compareData} />}
 
       {mode === 'sweep' && sweepData && (
         <>
