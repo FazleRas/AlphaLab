@@ -23,6 +23,7 @@ A full-stack trading analytics platform with real-time market data, technical in
 - **Out-of-sample validation** — optimize on the first ~70% of history, then re-test the winners blind on the held-out ~30% with an honest HELD UP / LAGGED / DEGRADED verdict per combo
 - **Shareable backtest URLs** — every run is encoded in the query string, so a link opens straight to that backtest or sweep
 - **CSV export** of the full trade history
+- **Per-user watchlist with auth** — sign in (Supabase email/password) and save a personal watchlist that persists across sessions, secured per-user with Row-Level Security
 - Bloomberg-style dark UI built in React + Tailwind
 
 ## Backtesting, Parameter Sweep & Validation
@@ -58,6 +59,9 @@ It's also an overfitting check, in two layers. First, the heatmap itself: a *reg
 - Tailwind CSS
 - Recharts
 
+**Auth & persistence**
+- Supabase (Postgres + Auth) — email/password auth and a per-user watchlist table protected by Row-Level Security
+
 **Deployment**
 - Backend: Render (Dockerized)
 - Frontend: Vercel
@@ -81,6 +85,24 @@ Then visit `http://127.0.0.1:8000/docs` for the interactive API docs or `http://
 
 The frontend targets the deployed backend by default; set `REACT_APP_API_URL=http://localhost:8000` to point it at a local one.
 
+## Supabase Setup (watchlist & auth)
+
+The watchlist tab is backed by Supabase. To enable it:
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. In the dashboard, open **SQL Editor → New query**, paste the contents of
+   [`supabase/schema.sql`](supabase/schema.sql), and run it. This creates the
+   `watchlist` table and its Row-Level Security policies.
+3. Copy your project's **URL** and **anon/public key** from **Project Settings → API**.
+4. In `frontend/`, copy `.env.example` to `.env.local` and fill in
+   `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY`.
+5. (For local testing without email) Under **Authentication → Sign In / Providers → Email**,
+   turn off **Confirm email** so sign-ups are usable immediately.
+
+Without these variables the app still runs — the watchlist tab simply shows a
+"not configured" note and the other tabs are unaffected.
+
 ## Status
 
-Active development — next up is a per-user watchlist with persistence and auth (Supabase).
+Active development — per-user watchlists with Supabase auth just landed. Next up:
+sharing watchlists and syncing scanner results into a saved view.
