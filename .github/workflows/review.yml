@@ -1,0 +1,25 @@
+name: AI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: reviewbot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # Same-repo PRs only: fork PRs can't read secrets, and pull_request_target
+    # with untrusted checkout is an RCE footgun. See the bot's docs.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: FazleRas/ai-review-bot@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
