@@ -8,6 +8,7 @@ import useAuth from './hooks/useAuth';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const TABS = ['dashboard', 'scanner', 'backtest', 'watchlist'];
+const APP_VERSION = 'v1.0.0';
 
 const getInitialTab = () => {
   const v = new URLSearchParams(window.location.search).get('view');
@@ -65,7 +66,10 @@ function App() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: '#0a0a0f', color: '#e2e2e2' }}>
       <div style={{ borderBottom: '1px solid #1e1e2e' }} className="px-8 py-4 flex items-center justify-between">
-        <span className="font-mono text-lg tracking-widest" style={{ color: '#2563eb' }}>ALPHALAB</span>
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-lg tracking-widest" style={{ color: '#2563eb' }}>ALPHALAB</span>
+          <span className="font-mono text-xs" style={{ color: '#3a3a44' }}>{APP_VERSION}</span>
+        </div>
         <AuthStatus user={user} />
       </div>
       <div style={{ borderBottom: '1px solid #1e1e2e' }} className="px-8 flex gap-8">
@@ -86,7 +90,7 @@ function App() {
       <div className="px-8 py-6">
         {activeTab === 'dashboard' && <Dashboard />}
         {activeTab === 'scanner' && <Scanner />}
-        {activeTab === 'backtest' && <Backtest />}
+        {activeTab === 'backtest' && <Backtest user={user} />}
         {activeTab === 'watchlist' && <WatchlistTab user={user} loading={loading} />}
       </div>
     </div>
