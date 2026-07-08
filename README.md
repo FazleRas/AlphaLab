@@ -46,11 +46,17 @@ It's also an overfitting check, in two layers. First, the heatmap itself: a *reg
 - `GET /sweep/{ticker}?strategy=rsi&period=2y` — run a `buy_rsi` × `sell_rsi` grid in one request, returning per-cell metrics and the best combination (rsi / combined strategies)
 - `GET /validate/{ticker}?strategy=rsi&period=2y&split=0.7&top_n=3` — out-of-sample validation: sweep the train window, re-run the top combos on the held-out test window, and return train vs. test metrics per combo
 
+**Protected** (require an `Authorization: Bearer <supabase-jwt>` header; each request is scoped to the signed-in user):
+
+- `GET/POST /watchlist`, `DELETE /watchlist/{ticker}` — read, add to, and remove from the user's saved watchlist
+- `GET/POST /saved-runs`, `DELETE /saved-runs/{id}` — list, save, and delete pinned backtest runs (ticker, strategy, period, params, metrics)
+
 ## Tech Stack
 
 **Backend**
 - Python + FastAPI
 - yfinance + pandas
+- asyncpg (Supabase Postgres) + PyJWT (Supabase auth verification)
 - Uvicorn
 - Docker
 
@@ -60,7 +66,7 @@ It's also an overfitting check, in two layers. First, the heatmap itself: a *reg
 - Recharts
 
 **Auth & persistence**
-- Supabase (Postgres + Auth) — email/password auth and a per-user watchlist table protected by Row-Level Security
+- Supabase (Postgres + Auth). The frontend authenticates with Supabase Auth and sends the JWT to FastAPI; the backend verifies it and reaches Postgres via the transaction pooler (asyncpg). Per-user tables (`watchlist`, `saved_runs`) also have Row-Level Security as defense-in-depth.
 
 **Deployment**
 - Backend: Render (Dockerized)
@@ -87,22 +93,32 @@ The frontend targets the deployed backend by default; set `REACT_APP_API_URL=htt
 
 ## Supabase Setup (watchlist & auth)
 
-The watchlist tab is backed by Supabase. To enable it:
+Auth and persistence are backed by Supabase. The frontend signs in with Supabase
+Auth and sends the JWT to FastAPI; the backend verifies it and talks to Postgres.
 
 1. Create a free project at [supabase.com](https://supabase.com).
 2. In the dashboard, open **SQL Editor → New query**, paste the contents of
    [`supabase/schema.sql`](supabase/schema.sql), and run it. This creates the
-   `watchlist` table and its Row-Level Security policies.
-3. Copy your project's **URL** and **anon/public key** from **Project Settings → API**.
-4. In `frontend/`, copy `.env.example` to `.env.local` and fill in
-   `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY`.
-5. (For local testing without email) Under **Authentication → Sign In / Providers → Email**,
-   turn off **Confirm email** so sign-ups are usable immediately.
+   `watchlist` and `saved_runs` tables plus their Row-Level Security policies.
+3. **Frontend** — copy `frontend/.env.example` to `frontend/.env.local` and set
+   `REACT_APP_SUPABASE_URL` and `REACT_APP_SUPABASE_ANON_KEY` (from **Project
+   Settings → API**). The anon key is safe to ship in the browser.
+4. **Backend** — copy `backend/.env.example` to `backend/.env` and set:
+   - `DATABASE_URL` — the **Transaction pooler** string (port 6543,
+     `*.pooler.supabase.com`) from **Project Settings → Database**. Not the
+     direct `db.<ref>.supabase.co:5432` one (IPv6-only, fails on Render).
+   - `SUPABASE_JWT_SECRET` — from **Project Settings → API → JWT Settings**.
+5. Verify the DB pipe once: `cd backend && python test_db.py` (with `DATABASE_URL`
+   exported) should print the `saved_runs` row count.
+6. (For local testing without email) Under **Authentication → Sign In / Providers
+   → Email**, turn off **Confirm email** so sign-ups are usable immediately.
 
-Without these variables the app still runs — the watchlist tab simply shows a
-"not configured" note and the other tabs are unaffected.
+Both apps still run without these — the watchlist tab shows a "not configured"
+note and the DB-backed routes return `503`, while every other feature is
+unaffected.
 
 ## Status
 
-Active development — per-user watchlists with Supabase auth just landed. Next up:
-sharing watchlists and syncing scanner results into a saved view.
+Active development — per-user auth, a saved watchlist, and saved backtest runs
+are wired through FastAPI + Supabase. Next up: surfacing saved runs in the
+backtest UI and a "save this run" action.

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { supabase } from '../supabaseClient';
+import { authFetch } from '../api';
 import useColdStartHint from '../hooks/useColdStartHint';
 import API from '../config';
 
@@ -11,27 +11,26 @@ const rsiColor = (rsi) => {
   return '#e2e2e2';
 };
 
-// Per-user saved tickers, persisted in Supabase and enriched with live
-// price + signals from the existing /scan endpoint.
-export default function Watchlist({ user }) {
-  const [tickers, setTickers] = useState([]);       // saved symbols from Supabase
+// Per-user saved tickers. Persistence goes through the FastAPI backend
+// (/watchlist, JWT-verified); live price + signals come from /scan.
+export default function Watchlist() {
+  const [tickers, setTickers] = useState([]);       // saved symbols from the backend
   const [quotes, setQuotes] = useState({});          // ticker -> scan result
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);     // quote fetch in flight
   const [error, setError] = useState(null);
   const waking = useColdStartHint(loading);
 
-  // Pull the saved watchlist for this user. RLS guarantees we only get our own.
+  // Pull the saved watchlist for the signed-in user (scoped server-side by JWT).
   const loadWatchlist = useCallback(async () => {
-    const { data, error: dbError } = await supabase
-      .from('watchlist')
-      .select('ticker')
-      .order('created_at', { ascending: true });
-    if (dbError) {
-      setError(dbError.message);
-      return;
+    try {
+      const res = await authFetch('/watchlist');
+      if (!res.ok) throw new Error(`watchlist ${res.status}`);
+      const data = await res.json();
+      setTickers(data.tickers || []);
+    } catch (e) {
+      setError('Failed to load your watchlist.');
     }
-    setTickers(data.map(r => r.ticker));
   }, []);
 
   // Fetch live quotes/signals for the saved tickers from the backend.
@@ -61,29 +60,28 @@ export default function Watchlist({ user }) {
     const symbol = input.trim().toUpperCase();
     if (!symbol || tickers.includes(symbol)) { setInput(''); return; }
     setError(null);
-    // Optimistic; user_id defaults from auth.uid() but we set it explicitly.
-    const { error: dbError } = await supabase
-      .from('watchlist')
-      .insert({ ticker: symbol, user_id: user.id });
-    if (dbError) {
-      setError(dbError.message);
-      return;
+    try {
+      const res = await authFetch('/watchlist', {
+        method: 'POST',
+        body: JSON.stringify({ ticker: symbol }),
+      });
+      if (!res.ok) throw new Error(`add ${res.status}`);
+      setInput('');
+      setTickers(prev => [...prev, symbol]);
+    } catch (e) {
+      setError('Failed to add ticker.');
     }
-    setInput('');
-    setTickers(prev => [...prev, symbol]);
   };
 
   const removeTicker = async (symbol) => {
     setError(null);
-    const { error: dbError } = await supabase
-      .from('watchlist')
-      .delete()
-      .eq('ticker', symbol);
-    if (dbError) {
-      setError(dbError.message);
-      return;
+    try {
+      const res = await authFetch(`/watchlist/${symbol}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`remove ${res.status}`);
+      setTickers(prev => prev.filter(t => t !== symbol));
+    } catch (e) {
+      setError('Failed to remove ticker.');
     }
-    setTickers(prev => prev.filter(t => t !== symbol));
   };
 
   return (
