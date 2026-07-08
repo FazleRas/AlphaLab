@@ -3,7 +3,9 @@ import EquityCurveChart from './EquityCurveChart';
 import SweepHeatmap from './SweepHeatmap';
 import ValidationPanel from './ValidationPanel';
 import CompareView from './CompareView';
+import SavedRuns from './SavedRuns';
 import useColdStartHint from '../hooks/useColdStartHint';
+import { authFetch } from '../api';
 import API from '../config';
 
 const ColdStartHint = () => (
@@ -28,7 +30,7 @@ const sharpeColor = (s) => {
   return '#00c896';
 };
 
-export default function Backtest() {
+export default function Backtest({ user }) {
   const [ticker, setTicker] = useState('');
   const [period, setPeriod] = useState('2y');
   const [buyRsi, setBuyRsi] = useState(30);
@@ -44,6 +46,8 @@ export default function Backtest() {
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [saveState, setSaveState] = useState('idle'); // 'idle' | 'saving' | 'saved'
+  const [savedRefresh, setSavedRefresh] = useState(0);
   const waking = useColdStartHint(loading);
 
   const periods = ['6mo', '1y', '2y', '5y', 'max'];
@@ -169,6 +173,54 @@ export default function Backtest() {
     setTimeout(() => setCopied(false), 1500);
   };
 
+  // Pin the current single-run backtest to the signed-in user's saved runs.
+  const saveRun = async () => {
+    if (!results) return;
+    setSaveState('saving');
+    try {
+      const res = await authFetch('/saved-runs', {
+        method: 'POST',
+        body: JSON.stringify({
+          ticker: results.ticker,
+          strategy: results.strategy,
+          period,
+          params: { buy_rsi: Number(buyRsi), sell_rsi: Number(sellRsi) },
+          metrics: {
+            total_return_pct: results.total_return_pct,
+            cagr_pct: results.cagr_pct,
+            sharpe: results.sharpe,
+            max_drawdown_pct: results.max_drawdown_pct,
+            win_rate_pct: results.win_rate_pct,
+            num_trades: results.num_trades,
+          },
+        }),
+      });
+      if (!res.ok) throw new Error(`save ${res.status}`);
+      setSaveState('saved');
+      setSavedRefresh(n => n + 1);
+      setTimeout(() => setSaveState('idle'), 1500);
+    } catch (e) {
+      setError('Failed to save run. Are you still signed in?');
+      setSaveState('idle');
+    }
+  };
+
+  // Re-run a saved run in the backtester: restore its inputs and execute.
+  const loadSavedRun = (savedRun) => {
+    const tk = savedRun.ticker;
+    const per = savedRun.period || '2y';
+    const strat = savedRun.strategy || 'rsi';
+    const b = savedRun.params?.buy_rsi ?? 30;
+    const s = savedRun.params?.sell_rsi ?? 70;
+    setTicker(tk);
+    setPeriod(per);
+    setStrategy(strat);
+    setBuyRsi(b);
+    setSellRsi(s);
+    setMode('single');
+    run({ ticker: tk, period: per, strategy: strat, buyRsi: b, sellRsi: s });
+  };
+
   // On load, restore a shared backtest from the URL and run it automatically.
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
@@ -213,6 +265,9 @@ export default function Backtest() {
 
   return (
     <div className="max-w-4xl mx-auto">
+
+      {/* Saved runs (signed-in only) */}
+      <SavedRuns user={user} refreshKey={savedRefresh} onLoad={loadSavedRun} />
 
       {/* Inputs */}
       <div className="p-4 rounded mb-6" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
@@ -336,6 +391,17 @@ export default function Backtest() {
               ? { single: 'RUNNING BACKTEST...', sweep: 'RUNNING SWEEP...', compare: 'COMPARING STRATEGIES...' }[mode]
               : { single: 'RUN BACKTEST', sweep: 'RUN SWEEP', compare: 'COMPARE ALL STRATEGIES' }[mode]}
           </button>
+          {mode === 'single' && results && user && (
+            <button
+              onClick={saveRun}
+              disabled={saveState === 'saving'}
+              className="px-4 py-3 font-mono text-sm rounded"
+              style={{ border: `1px solid ${saveState === 'saved' ? '#00c896' : '#1e1e2e'}`,
+                       color: saveState === 'saved' ? '#00c896' : '#6b7280' }}
+            >
+              {{ idle: 'SAVE RUN', saving: 'SAVING...', saved: 'SAVED' }[saveState]}
+            </button>
+          )}
           {(results || sweepData || compareData) && (
             <button
               onClick={copyLink}

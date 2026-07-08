@@ -24,6 +24,7 @@ A full-stack trading analytics platform with real-time market data, technical in
 - **Shareable backtest URLs** — every run is encoded in the query string, so a link opens straight to that backtest or sweep
 - **CSV export** of the full trade history
 - **Per-user watchlist with auth** — sign in (Supabase email/password) and save a personal watchlist that persists across sessions, secured per-user with Row-Level Security
+- **Saved backtest runs** — pin any single-run backtest (ticker, strategy, period, params, and its metrics) to your account and reload it into the backtester in one click, secured per-user with Row-Level Security
 - Bloomberg-style dark UI built in React + Tailwind
 
 ## Backtesting, Parameter Sweep & Validation
@@ -119,6 +120,8 @@ unaffected.
 
 ## Status
 
-Active development — per-user auth, a saved watchlist, and saved backtest runs
-are wired through FastAPI + Supabase. Next up: surfacing saved runs in the
-backtest UI and a "save this run" action.
+**v1.0** — feature-complete. Real-time data, indicators, charts, the scanner,
+the multi-strategy backtester with parameter sweep and out-of-sample validation,
+and per-user auth with a saved watchlist and saved backtest runs are all wired
+through FastAPI + Supabase and deployed. Next up (v1.1): a Redis cache in front
+of the market-data layer to speed up repeat scans and backtests.
