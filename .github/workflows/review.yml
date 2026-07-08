@@ -1,0 +1,31 @@
+name: AI Review
+
+# Run ACROBOT (github.com/FazleRas/acrobot) on every pull request so each diff
+# gets an automated LLM review with inline comments. Also serves as live
+# dogfooding for ACROBOT itself.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# One review per PR; a new push cancels the in-flight run for that PR.
+concurrency:
+  group: acrobot-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # Same-repo PRs only: fork PRs can't read secrets, and pull_request_target
+    # + untrusted checkout would be an RCE footgun.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4   # so the action can read .github/acrobot.yml
+      # Pinned to @main to always dogfood the latest ACROBOT. Switch to a
+      # released tag (e.g. @v1.0.0) or a commit SHA once ACROBOT cuts one.
+      - uses: FazleRas/acrobot@main
+        with:
+          gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
