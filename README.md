@@ -108,7 +108,12 @@ Auth and sends the JWT to FastAPI; the backend verifies it and talks to Postgres
    - `DATABASE_URL` — the **Transaction pooler** string (port 6543,
      `*.pooler.supabase.com`) from **Project Settings → Database**. Not the
      direct `db.<ref>.supabase.co:5432` one (IPv6-only, fails on Render).
-   - `SUPABASE_JWT_SECRET` — from **Project Settings → API → JWT Settings**.
+   - `SUPABASE_URL` — your project URL (`https://<ref>.supabase.co`). The
+     backend fetches the project's public JWT signing keys from its JWKS
+     endpoint to verify access tokens (Supabase's current asymmetric ES256/RS256
+     keys). For an older project that still uses a legacy shared HS256 secret,
+     set `SUPABASE_JWT_SECRET` instead — the backend detects the token's
+     algorithm and handles either.
 5. Verify the DB pipe once: `cd backend && python test_db.py` (with `DATABASE_URL`
    exported) should print the `saved_runs` row count.
 6. (For local testing without email) Under **Authentication → Sign In / Providers
