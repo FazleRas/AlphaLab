@@ -6,7 +6,7 @@ import API from '../config';
 const StatCard = ({ label, value, color }) => (
   <div className="p-3 rounded" style={{ backgroundColor: '#0a0a0f', border: '1px solid #1e1e2e' }}>
     <p className="font-mono text-xs mb-1 tracking-widest" style={{ color: '#6b7280' }}>{label}</p>
-    <p className="font-mono text-sm" style={{ color: color || '#e2e2e2' }}>{value ?? '—'}</p>
+    <p className="font-mono text-sm" style={{ color: color || '#e2e2e2' }}>{value ?? '-'}</p>
   </div>
 );
 
@@ -30,7 +30,7 @@ const SignalRow = ({ label, value, type }) => (
       backgroundColor: value ? (type === 'bull' ? '#00c89620' : '#ff4d6d20') : 'transparent',
       color: value ? (type === 'bull' ? '#00c896' : '#ff4d6d') : '#6b7280',
     }}>
-      {value ? 'YES' : '—'}
+      {value ? 'YES' : '-'}
     </span>
   </div>
 );
@@ -73,7 +73,7 @@ export default function Dashboard() {
           value={ticker}
           onChange={e => setTicker(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && search()}
-          placeholder="Enter ticker — AAPL, NVDA..."
+          placeholder="Enter ticker: AAPL, NVDA..."
           className="flex-1 px-4 py-3 font-mono text-sm rounded outline-none"
           style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
         />
@@ -88,7 +88,7 @@ export default function Dashboard() {
 
       {waking && loading && (
         <p className="font-mono text-sm mb-6" style={{ color: '#f97316' }}>
-          Waking up the backend — the first request after idle can take ~30s.
+          Waking up the backend. The first request after idle can take ~30s.
         </p>
       )}
       {error && <p className="font-mono text-sm mb-6" style={{ color: '#ff4d6d' }}>{error}</p>}
