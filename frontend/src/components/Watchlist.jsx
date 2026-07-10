@@ -92,7 +92,7 @@ export default function Watchlist() {
           value={input}
           onChange={e => setInput(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && addTicker()}
-          placeholder="Add a ticker — AAPL, NVDA..."
+          placeholder="Add a ticker: AAPL, NVDA..."
           className="flex-1 px-4 py-3 font-mono text-sm rounded outline-none"
           style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
         />
@@ -107,14 +107,14 @@ export default function Watchlist() {
 
       {waking && loading && (
         <p className="font-mono text-sm mb-4" style={{ color: '#f97316' }}>
-          Waking up the backend — the first request after idle can take ~30s.
+          Waking up the backend. The first request after idle can take ~30s.
         </p>
       )}
       {error && <p className="font-mono text-sm mb-4" style={{ color: '#ff4d6d' }}>{error}</p>}
 
       {tickers.length === 0 && !loading && (
         <p className="font-mono text-sm" style={{ color: '#6b7280' }}>
-          Your watchlist is empty. Add a ticker above — it'll be saved to your account.
+          Your watchlist is empty. Add a ticker above and it'll be saved to your account.
         </p>
       )}
 
@@ -142,7 +142,7 @@ export default function Watchlist() {
                 </>
               ) : (
                 <span className="font-mono text-xs" style={{ color: '#6b7280' }}>
-                  {loading ? 'loading...' : '—'}
+                  {loading ? 'loading...' : '-'}
                 </span>
               )}
             </div>
