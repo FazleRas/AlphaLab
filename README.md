@@ -25,6 +25,7 @@ A full-stack trading analytics platform with real-time market data, technical in
 - **CSV export** of the full trade history
 - **Per-user watchlist with auth** — sign in (Supabase email/password) and save a personal watchlist that persists across sessions, secured per-user with Row-Level Security
 - **Saved backtest runs** — pin any single-run backtest (ticker, strategy, period, params, and its metrics) to your account and reload it into the backtester in one click, secured per-user with Row-Level Security
+- **Redis market-data cache** — optional caching layer in front of yfinance (quotes 60s, history/indicators 15min) that speeds up repeat scans, backtests, and sweeps and cuts rate-limit pressure; fails open, with hit/miss stats at `/cache-stats`
 - Bloomberg-style dark UI built in React + Tailwind
 
 ## Backtesting, Parameter Sweep & Validation
@@ -58,6 +59,7 @@ It's also an overfitting check, in two layers. First, the heatmap itself: a *reg
 - Python + FastAPI
 - yfinance + pandas
 - asyncpg (Supabase Postgres) + PyJWT (Supabase auth verification)
+- Redis (optional market-data cache)
 - Uvicorn
 - Docker
 
@@ -123,10 +125,24 @@ Both apps still run without these — the watchlist tab shows a "not configured"
 note and the DB-backed routes return `503`, while every other feature is
 unaffected.
 
+## Redis Cache (optional)
+
+Market-data fetches are cached in Redis when `REDIS_URL` is set on the backend:
+quotes and prices for 60s, history and indicators for 15 minutes. Everything
+downstream (scanner, backtests, sweeps, validation, compare) reuses the cached
+data, so repeat runs skip the slow yfinance round-trips entirely. The cache
+fails open — if Redis is down or unset, requests just fetch fresh data — and
+`GET /cache-stats` reports hits, misses, and hit rate.
+
+To enable on Render: create a **Key Value** instance (free 25MB tier), copy its
+**Internal Key Value URL** (`redis://red-...:6379`), and set it as `REDIS_URL`
+on the backend service. Locally: `brew install redis && brew services start
+redis`, then `REDIS_URL=redis://localhost:6379`.
+
 ## Status
 
-**v1.0** — feature-complete. Real-time data, indicators, charts, the scanner,
-the multi-strategy backtester with parameter sweep and out-of-sample validation,
-and per-user auth with a saved watchlist and saved backtest runs are all wired
-through FastAPI + Supabase and deployed. Next up (v1.1): a Redis cache in front
-of the market-data layer to speed up repeat scans and backtests.
+**v1.1** — v1.0 (tagged) shipped the feature-complete platform: real-time data,
+indicators, charts, the scanner, the multi-strategy backtester with parameter
+sweep and out-of-sample validation, and per-user auth with a saved watchlist
+and saved backtest runs, all wired through FastAPI + Supabase and deployed.
+v1.1 adds the optional Redis market-data cache.

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.prices import router as price_router
 from app.api.watchlist import router as watchlist_router
 from app.api.saved_runs import router as saved_runs_router
+from app.cache import stats as cache_stats
 from app.db import init_pool, close_pool
 
 
@@ -34,3 +35,8 @@ app.include_router(saved_runs_router)
 @app.get("/")
 def home():
     return {"status": "AlphaLab running"}
+
+
+@app.get("/cache-stats")
+def cache_statistics():
+    return cache_stats()
