@@ -37,12 +37,18 @@ def _get_client() -> redis.Redis | None:
         _client_checked = True
         url = os.environ.get("REDIS_URL")
         if url:
-            _client = redis.Redis.from_url(
-                url,
-                decode_responses=True,
-                socket_connect_timeout=1,
-                socket_timeout=1,
-            )
+            # A malformed REDIS_URL raises here (from_url only parses; it
+            # connects lazily). Treat it as "no cache" permanently — a bad
+            # URL can't heal on retry, and the app must keep serving.
+            try:
+                _client = redis.Redis.from_url(
+                    url,
+                    decode_responses=True,
+                    socket_connect_timeout=1,
+                    socket_timeout=1,
+                )
+            except (redis.RedisError, ValueError, OSError):
+                _client = None
     return _client
 
 

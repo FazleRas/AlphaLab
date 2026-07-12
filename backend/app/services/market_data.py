@@ -15,6 +15,10 @@ HISTORY_TTL = 900
 def _fetch_price(ticker: str):
     stock = yf.Ticker(ticker)
     data = stock.history(period="1d")
+    # Empty frame (bad ticker / no trading data): None, never an IndexError.
+    # cache_json won't cache it, so the gap isn't pinned for the TTL.
+    if data.empty:
+        return None
     return float(data["Close"].iloc[-1])
 
 def get_price(ticker: str):
