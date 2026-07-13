@@ -3,12 +3,26 @@ from datetime import date as _date
 
 import yfinance as yf
 
+from app.cache import cache_json
+
 TRADING_DAYS_PER_YEAR = 252
 
-def get_price(ticker: str):
+# Cache TTLs (seconds). Quotes/prices stay fresh-ish for the dashboard; daily
+# OHLCV bars barely change intraday, so history/indicators can live longer.
+QUOTE_TTL = 60
+HISTORY_TTL = 900
+
+def _fetch_price(ticker: str):
     stock = yf.Ticker(ticker)
     data = stock.history(period="1d")
+    # Empty frame (bad ticker / no trading data): None, never an IndexError.
+    # cache_json won't cache it, so the gap isn't pinned for the TTL.
+    if data.empty:
+        return None
     return float(data["Close"].iloc[-1])
+
+def get_price(ticker: str):
+    return cache_json(f"price:{ticker.upper()}", QUOTE_TTL, lambda: _fetch_price(ticker))
 
 def get_multiple_prices(tickers: list[str]):
     results = {}
@@ -19,7 +33,7 @@ def get_multiple_prices(tickers: list[str]):
             results[t] = None
     return results
 
-def get_history(ticker: str, period: str = "1mo"):
+def _fetch_history(ticker: str, period: str):
     stock = yf.Ticker(ticker)
     data = stock.history(period=period)
     return [
@@ -34,7 +48,13 @@ def get_history(ticker: str, period: str = "1mo"):
         for index, row in data.iterrows()
     ]
 
-def get_quote(ticker: str):
+def get_history(ticker: str, period: str = "1mo"):
+    return cache_json(
+        f"hist:{ticker.upper()}:{period}", HISTORY_TTL,
+        lambda: _fetch_history(ticker, period),
+    )
+
+def _fetch_quote(ticker: str):
     stock = yf.Ticker(ticker)
     info = stock.info
 
@@ -61,7 +81,16 @@ def get_quote(ticker: str):
         "pe_ratio": info.get("trailingPE"),
     }
 
-def get_indicators(ticker: str, period: str = "3mo"):
+def get_quote(ticker: str):
+    # Only cache quotes that actually carry a price, so a transient yfinance
+    # gap isn't pinned for the whole TTL.
+    return cache_json(
+        f"quote:{ticker.upper()}", QUOTE_TTL,
+        lambda: _fetch_quote(ticker),
+        should_cache=lambda q: q.get("price") is not None,
+    )
+
+def _fetch_indicators(ticker: str, period: str):
     stock = yf.Ticker(ticker)
     data = stock.history(period=period)
     
@@ -102,6 +131,12 @@ def get_indicators(ticker: str, period: str = "3mo"):
         for index, row in data.iterrows()
         if row["Close"] == row["Close"]
     ]
+
+def get_indicators(ticker: str, period: str = "3mo"):
+    return cache_json(
+        f"ind:{ticker.upper()}:{period}", HISTORY_TTL,
+        lambda: _fetch_indicators(ticker, period),
+    )
 
 def get_signals(ticker: str):
     data = get_indicators(ticker, period="6mo")
