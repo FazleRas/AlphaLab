@@ -52,10 +52,22 @@ export default function Dashboard() {
         fetch(`${API}/quote/${ticker}`),
         fetch(`${API}/signals/${ticker}`),
       ]);
-      const quoteData = await quoteRes.json();
-      const signalsData = await signalsRes.json();
-      setQuote({ ticker: quoteData.ticker, ...quoteData.quote });
-      setSignals(signalsData);
+      // A non-ok response means the backend IS up but a request failed
+      // (usually the upstream market-data source). Show the real error
+      // instead of the generic "is your backend running?" guess.
+      const bad = !quoteRes.ok ? quoteRes : !signalsRes.ok ? signalsRes : null;
+      if (bad) {
+        let detail = null;
+        try { detail = (await bad.json()).detail; } catch {}
+        setError(`Backend error ${bad.status}${detail ? `: ${detail}` : ''}. The market data source may be flaky - try again.`);
+        setQuote(null);
+        setSignals(null);
+      } else {
+        const quoteData = await quoteRes.json();
+        const signalsData = await signalsRes.json();
+        setQuote({ ticker: quoteData.ticker, ...quoteData.quote });
+        setSignals(signalsData);
+      }
     } catch (e) {
       setError('Failed to fetch data. Is your backend running?');
     }

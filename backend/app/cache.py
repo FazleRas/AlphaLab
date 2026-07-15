@@ -95,8 +95,13 @@ def cache_json(key: str, ttl: int, fetch, should_cache=bool):
 
     if r is not None and should_cache(result):
         try:
-            r.set(full_key, json.dumps(result), ex=ttl)
-        except (redis.RedisError, OSError, TypeError):
+            # allow_nan=False: stdlib json happily writes NaN/Infinity, which
+            # Starlette's response serializer then rejects - a NaN that slips
+            # into a result must never be pinned in the cache for the TTL.
+            # ValueError (NaN) and TypeError (unserializable) both mean
+            # "serve the result, just don't cache it".
+            r.set(full_key, json.dumps(result, allow_nan=False), ex=ttl)
+        except (redis.RedisError, OSError, TypeError, ValueError):
             pass
 
     return result
