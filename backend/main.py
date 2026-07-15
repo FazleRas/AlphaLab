@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.api.prices import router as price_router
 from app.api.watchlist import router as watchlist_router
@@ -26,6 +27,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(Exception)
+async def unhandled_exception(request: Request, exc: Exception):
+    # Unhandled exceptions are answered by Starlette's outermost error
+    # middleware, which bypasses CORSMiddleware - the browser then blocks the
+    # 500 entirely and the frontend can only guess "is the backend down?".
+    # Answer with JSON and an explicit CORS header (safe: we serve "*" with
+    # credentials disabled) so the UI can show what actually failed.
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"internal error: {type(exc).__name__}"},
+        headers={"Access-Control-Allow-Origin": "*"},
+    )
+
 
 app.include_router(price_router)
 app.include_router(watchlist_router)

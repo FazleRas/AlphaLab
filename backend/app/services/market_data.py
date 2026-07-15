@@ -33,19 +33,28 @@ def get_multiple_prices(tickers: list[str]):
             results[t] = None
     return results
 
+def _round2(value):
+    # NaN-safe round: NaN is not JSON compliant, so it must become None
+    # before the row is cached or serialized into a response.
+    return None if value != value else round(float(value), 2)
+
 def _fetch_history(ticker: str, period: str):
     stock = yf.Ticker(ticker)
     data = stock.history(period=period)
     return [
         {
             "date": str(index.date()),
-            "open": round(float(row["Open"]), 2),
-            "high": round(float(row["High"]), 2),
-            "low": round(float(row["Low"]), 2),
-            "close": round(float(row["Close"]), 2),
-            "volume": int(row["Volume"])
+            "open": _round2(row["Open"]),
+            "high": _round2(row["High"]),
+            "low": _round2(row["Low"]),
+            "close": _round2(row["Close"]),
+            "volume": int(row["Volume"]) if row["Volume"] == row["Volume"] else None,
         }
+        # Skip rows with no close, same as _fetch_indicators: yfinance includes
+        # the current (incomplete) trading day with NaN prices, which would 500
+        # the response and get pinned in the cache for the whole TTL.
         for index, row in data.iterrows()
+        if row["Close"] == row["Close"]
     ]
 
 def get_history(ticker: str, period: str = "1mo"):
@@ -54,9 +63,44 @@ def get_history(ticker: str, period: str = "1mo"):
         lambda: _fetch_history(ticker, period),
     )
 
+def _fast_attr(fast_info, name):
+    # fast_info attributes can individually raise or come back NaN; a missing
+    # field should degrade to None, not take down the whole quote.
+    try:
+        value = getattr(fast_info, name)
+    except Exception:
+        return None
+    return None if isinstance(value, float) and value != value else value
+
+def _fallback_quote(stock, ticker: str):
+    fi = stock.fast_info
+    price = _fast_attr(fi, "last_price")
+    open_price = _fast_attr(fi, "open")
+    change = round(price - open_price, 2) if price and open_price else None
+    change_pct = round((change / open_price) * 100, 2) if change and open_price else None
+    return {
+        "ticker": ticker.upper(),
+        "price": price,
+        "open": open_price,
+        "change": change,
+        "change_pct": change_pct,
+        "day_high": _fast_attr(fi, "day_high"),
+        "day_low": _fast_attr(fi, "day_low"),
+        "volume": _fast_attr(fi, "last_volume"),
+        "market_cap": _fast_attr(fi, "market_cap"),
+        "pe_ratio": None,
+    }
+
 def _fetch_quote(ticker: str):
     stock = yf.Ticker(ticker)
-    info = stock.info
+    # Yahoo's quoteSummary API behind .info is the one it rate-limits hardest
+    # for datacenter IPs (e.g. Render), and /quote is the only endpoint that
+    # touches it. Fall back to fast_info, which is served from the chart API
+    # like every other endpoint; fundamentals (P/E) are just absent then.
+    try:
+        info = stock.info
+    except Exception:
+        return _fallback_quote(stock, ticker)
 
     price = (
         info.get("currentPrice") or
