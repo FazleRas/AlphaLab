@@ -141,8 +141,14 @@ redis`, then `REDIS_URL=redis://localhost:6379`.
 
 ## Status
 
-**v1.1** — v1.0 (tagged) shipped the feature-complete platform: real-time data,
-indicators, charts, the scanner, the multi-strategy backtester with parameter
-sweep and out-of-sample validation, and per-user auth with a saved watchlist
-and saved backtest runs, all wired through FastAPI + Supabase and deployed.
-v1.1 adds the optional Redis market-data cache.
+**v1.1.1** — v1.0.0 (tagged) shipped the feature-complete platform: real-time
+data, indicators, charts, the scanner, the multi-strategy backtester with
+parameter sweep and out-of-sample validation, and per-user auth with a saved
+watchlist and saved backtest runs, all wired through FastAPI + Supabase and
+deployed. v1.1.0 added the optional Redis market-data cache. v1.1.1 hardens
+the market-data layer after a production incident: `/quote` now falls back to
+Yahoo's chart API when the rate-limit-prone quoteSummary API fails, NaN rows
+from the current (incomplete) trading day can no longer 500 `/history` or get
+pinned in the cache, and backend errors reach the browser as JSON with CORS
+headers so the UI reports the real failure instead of guessing the backend is
+down.
