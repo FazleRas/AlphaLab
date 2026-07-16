@@ -4,6 +4,7 @@ import Scanner from './components/Scanner';
 import Backtest from './components/Backtest';
 import Watchlist from './components/Watchlist';
 import Auth from './components/Auth';
+import ErrorBoundary from './components/ErrorBoundary';
 import useAuth from './hooks/useAuth';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
@@ -88,10 +89,14 @@ function App() {
         ))}
       </div>
       <div className="px-8 py-6">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'scanner' && <Scanner />}
-        {activeTab === 'backtest' && <Backtest user={user} />}
-        {activeTab === 'watchlist' && <WatchlistTab user={user} loading={loading} />}
+        {/* key resets the boundary when switching tabs, so a crash in one
+            tab never blocks the others */}
+        <ErrorBoundary key={activeTab}>
+          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'scanner' && <Scanner />}
+          {activeTab === 'backtest' && <Backtest user={user} />}
+          {activeTab === 'watchlist' && <WatchlistTab user={user} loading={loading} />}
+        </ErrorBoundary>
       </div>
     </div>
   );

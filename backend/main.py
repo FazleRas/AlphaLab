@@ -35,6 +35,15 @@ async def unhandled_exception(request: Request, exc: Exception):
     # 500 entirely and the frontend can only guess "is the backend down?".
     # Answer with JSON and an explicit CORS header (safe: we serve "*" with
     # credentials disabled) so the UI can show what actually failed.
+    #
+    # Yahoo intermittently answers with 429 even for unknown tickers; match
+    # by name so this doesn't depend on yfinance's exception module layout.
+    if "RateLimit" in type(exc).__name__:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "The market data source is rate limiting requests. Try again in a moment."},
+            headers={"Access-Control-Allow-Origin": "*"},
+        )
     return JSONResponse(
         status_code=500,
         content={"detail": f"internal error: {type(exc).__name__}"},
