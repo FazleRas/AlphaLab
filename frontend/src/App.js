@@ -4,11 +4,14 @@ import Scanner from './components/Scanner';
 import Backtest from './components/Backtest';
 import Watchlist from './components/Watchlist';
 import Auth from './components/Auth';
+import ErrorBoundary from './components/ErrorBoundary';
 import useAuth from './hooks/useAuth';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const TABS = ['dashboard', 'scanner', 'backtest', 'watchlist'];
-const APP_VERSION = 'v1.0.0';
+// Read from package.json so the header badge can't drift from the release
+// version again (it sat at v1.0.0 through two releases).
+const APP_VERSION = `v${require('../package.json').version}`;
 
 const getInitialTab = () => {
   const v = new URLSearchParams(window.location.search).get('view');
@@ -88,10 +91,14 @@ function App() {
         ))}
       </div>
       <div className="px-8 py-6">
-        {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'scanner' && <Scanner />}
-        {activeTab === 'backtest' && <Backtest user={user} />}
-        {activeTab === 'watchlist' && <WatchlistTab user={user} loading={loading} />}
+        {/* key resets the boundary when switching tabs, so a crash in one
+            tab never blocks the others */}
+        <ErrorBoundary key={activeTab}>
+          {activeTab === 'dashboard' && <Dashboard />}
+          {activeTab === 'scanner' && <Scanner />}
+          {activeTab === 'backtest' && <Backtest user={user} />}
+          {activeTab === 'watchlist' && <WatchlistTab user={user} loading={loading} />}
+        </ErrorBoundary>
       </div>
     </div>
   );

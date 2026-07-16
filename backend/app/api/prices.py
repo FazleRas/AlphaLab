@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 from typing import Optional
 from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest, run_sweep, run_validation, run_compare
 
@@ -15,7 +15,16 @@ def history(ticker: str, period: str = "1mo"):
 
 @router.get("/quote/{ticker}")
 def quote(ticker: str):
-    return {"ticker": ticker.upper(), "quote": get_quote(ticker)}
+    q = get_quote(ticker)
+    # yfinance answers unknown/delisted tickers with an empty shell (every
+    # price field None) rather than an error; surface it as a 404 the UI can
+    # show instead of rendering a quote full of nulls.
+    if q.get("price") is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No market data for '{ticker.upper()}'. Check the symbol - Yahoo Finance may not support it or it may be delisted.",
+        )
+    return {"ticker": ticker.upper(), "quote": q}
 
 
 @router.get("/indicators/{ticker}")
@@ -24,7 +33,16 @@ def indicators(ticker: str, period: str = "3mo"):
 
 @router.get("/signals/{ticker}")
 def signals(ticker: str):
-    return get_signals(ticker.upper())
+    result = get_signals(ticker.upper())
+    # get_signals reports "no usable price history" as an error dict (the
+    # scanner consumes that shape); for the single-ticker endpoint a 404 is
+    # the honest answer.
+    if result.get("error"):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Not enough price history for '{ticker.upper()}' to generate signals.",
+        )
+    return result
 
 @router.get("/scan")
 def scan(

@@ -43,6 +43,16 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const waking = useColdStartHint(loading);
 
+  // A non-ok response means the backend IS up but a request failed. 404
+  // (unknown ticker) and 503 (upstream rate limit) carry a human-readable
+  // detail from the backend; anything else gets the generic hint.
+  const friendlyError = async (res) => {
+    let detail = null;
+    try { detail = (await res.json()).detail; } catch {}
+    if ((res.status === 404 || res.status === 503) && detail) return detail;
+    return `Backend error ${res.status}${detail ? `: ${detail}` : ''}. The market data source may be flaky - try again.`;
+  };
+
   const search = async () => {
     if (!ticker) return;
     setLoading(true);
@@ -52,21 +62,23 @@ export default function Dashboard() {
         fetch(`${API}/quote/${ticker}`),
         fetch(`${API}/signals/${ticker}`),
       ]);
-      // A non-ok response means the backend IS up but a request failed
-      // (usually the upstream market-data source). Show the real error
-      // instead of the generic "is your backend running?" guess.
-      const bad = !quoteRes.ok ? quoteRes : !signalsRes.ok ? signalsRes : null;
-      if (bad) {
-        let detail = null;
-        try { detail = (await bad.json()).detail; } catch {}
-        setError(`Backend error ${bad.status}${detail ? `: ${detail}` : ''}. The market data source may be flaky - try again.`);
+      if (!quoteRes.ok) {
+        setError(await friendlyError(quoteRes));
         setQuote(null);
         setSignals(null);
       } else {
         const quoteData = await quoteRes.json();
-        const signalsData = await signalsRes.json();
         setQuote({ ticker: quoteData.ticker, ...quoteData.quote });
-        setSignals(signalsData);
+        if (signalsRes.ok) {
+          const signalsData = await signalsRes.json();
+          // Only store a payload the signals panel can actually render.
+          setSignals(signalsData.signals ? signalsData : null);
+        } else {
+          // Quote is fine but signals aren't (e.g. a newly listed ticker
+          // without enough history): keep the quote, explain the gap.
+          setSignals(null);
+          setError(await friendlyError(signalsRes));
+        }
       }
     } catch (e) {
       setError('Failed to fetch data. Is your backend running?');
@@ -139,7 +151,7 @@ export default function Dashboard() {
           <PriceChart ticker={quote?.ticker} />
 
           {/* Signals */}
-          {signals && (
+          {signals?.signals && (
             <div className="rounded p-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
               <p className="font-mono text-xs mb-4 tracking-widest" style={{ color: '#6b7280' }}>SIGNALS</p>
               
