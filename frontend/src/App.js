@@ -9,7 +9,9 @@ import useAuth from './hooks/useAuth';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
 const TABS = ['dashboard', 'scanner', 'backtest', 'watchlist'];
-const APP_VERSION = 'v1.0.0';
+// Read from package.json so the header badge can't drift from the release
+// version again (it sat at v1.0.0 through two releases).
+const APP_VERSION = `v${require('../package.json').version}`;
 
 const getInitialTab = () => {
   const v = new URLSearchParams(window.location.search).get('view');
