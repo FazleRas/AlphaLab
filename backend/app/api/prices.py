@@ -86,6 +86,14 @@ def _frange(lo, hi, step):
     while v <= hi + 1e-9:
         values.append(round(v, 2))
         v += step
+        # Stop as soon as this axis alone would blow the grid cap. Any single
+        # axis longer than MAX_SWEEP_CELLS already makes the total grid too
+        # large, so there's no point building further — and without this bound
+        # a request like buy_step=0.0001 materializes billions of entries and
+        # hangs the worker BEFORE the len()-based cap below ever runs (an
+        # unauthenticated DoS on the public /sweep and /validate endpoints).
+        if len(values) > MAX_SWEEP_CELLS:
+            break
     return values
 
 @router.get("/sweep/{ticker}")
