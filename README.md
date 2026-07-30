@@ -72,8 +72,8 @@ It's also an overfitting check, in two layers. First, the heatmap itself: a *reg
 - Supabase (Postgres + Auth). The frontend authenticates with Supabase Auth and sends the JWT to FastAPI; the backend verifies it and reaches Postgres via the transaction pooler (asyncpg). Per-user tables (`watchlist`, `saved_runs`) also have Row-Level Security as defense-in-depth.
 
 **Deployment**
-- Backend: Render (Dockerized) — serves production traffic
-- Backend: AWS EC2 + Caddy (Dockerized) — parallel deployment, see
+- Backend: Render (Dockerized), serving production traffic
+- Backend: AWS EC2 + Caddy (Dockerized), running alongside it. See
   [Deployment & Infrastructure](#deployment--infrastructure)
 - Frontend: Vercel
 
@@ -143,25 +143,26 @@ redis`, then `REDIS_URL=redis://localhost:6379`.
 
 ## Deployment & Infrastructure
 
-Production traffic is served by **Render**. Alongside it runs a **self-managed
-AWS EC2 deployment** of the same container behind a Caddy reverse proxy with
-Let's Encrypt TLS — a parallel deployment, not the live path. This section
-documents that EC2 setup: what it is, why it's built this way, how to operate
-it, and what it doesn't do.
+Production runs on Render. I also set the same container up on an AWS EC2 box
+behind Caddy, mostly to understand how the pieces fit together without a
+platform doing it for me. Render still serves the live traffic. EC2 is a second
+deployment running alongside it.
+
+What's on the box:
 
 | | |
 |---|---|
 | Instance | t3.small (2 vCPU, 2 GB RAM), Ubuntu Server 24.04 LTS x86_64 |
 | Region | us-east-2 (Ohio) |
-| Storage | 20 GiB gp3, plus a 2 GB swapfile persisted via `/etc/fstab` |
-| Address | Elastic IP `18.224.102.222` → `alphalab-api.duckdns.org` |
-| Reverse proxy | Caddy 2.6.2, TLS via Let's Encrypt (`tls-alpn-01`), auto-renewing |
+| Storage | 20 GiB gp3, plus a 2 GB swapfile in `/etc/fstab` |
+| Address | Elastic IP `18.224.102.222`, pointed at `alphalab-api.duckdns.org` |
+| Reverse proxy | Caddy 2.6.2 with Let's Encrypt TLS (`tls-alpn-01`), auto-renewing |
 | Container | `alphalab-backend`, `--restart always`, uvicorn on `:8000` bound to the host |
 
-The 2 GB swapfile is there because 2 GB of RAM is thin for a pandas workload —
-a parameter sweep holds a full price history plus per-combination simulation
-state, and swap is the difference between a slow request and an OOM-killed
-container.
+The swapfile is there because 2 GB of RAM is tight for pandas. A parameter
+sweep loads a full price history and then runs a simulation for every
+combination in the grid. Without swap the container gets OOM killed instead of
+just running slowly.
 
 ### Architecture
 
@@ -190,70 +191,58 @@ Security group inbound rules:
 
 | Type | Port | Source | Why |
 |---|---|---|---|
-| SSH | 22 | My IP only | Admin access; never `0.0.0.0/0` |
-| HTTP | 80 | `0.0.0.0/0` | ACME challenges + HTTP→HTTPS redirect |
-| HTTPS | 443 | `0.0.0.0/0` | Public API surface |
+| SSH | 22 | My IP only | Admin access. Never `0.0.0.0/0` |
+| HTTP | 80 | `0.0.0.0/0` | ACME challenges and the HTTP to HTTPS redirect |
+| HTTPS | 443 | `0.0.0.0/0` | Public API |
 
-**Port 8000 is deliberately absent from that table, and that absence is the
-point of the diagram.** The container publishes `8000` on the host, so Caddy
-can reach it over loopback, but the security group never admits it — the only
-inbound edges crossing the instance boundary are `:80` and `:443`. The
-application server is not reachable from the internet at all; every request
-arrives through the proxy or not at all.
+Port 8000 is missing from that list on purpose. The container binds 8000 on the
+host so Caddy can reach it over loopback, but the security group never lets it
+through from outside. The only ways in are 80 and 443, so every request has to
+go through the proxy.
 
-### Why EC2 rather than ECS/Fargate
+### Why EC2 instead of ECS/Fargate
 
-This is one always-on container with no scaling requirement and no sibling
-services to coordinate. Fargate would add a task definition, an execution IAM
-role, and — to terminate TLS the managed way — an ALB, whose hourly cost alone
-exceeds the instance this runs on. That's real machinery bought for zero
-benefit at one container.
+One container, always on, nothing to scale and nothing to coordinate with.
+Fargate would mean writing a task definition, creating an execution IAM role,
+and adding an ALB to handle TLS. The ALB on its own costs more per hour than
+the instance I'm running. That's a lot of moving parts for no gain at this
+size.
 
-EC2 also bought two things worth having here: direct control of the proxy layer
-(a Caddyfile on disk, edited and reloaded in place, rather than a listener-rule
-graph), and full shell access — which is what made the TLS failure below
-diagnosable rather than a matter of re-reading task logs.
+EC2 also gave me a Caddyfile I can edit and reload directly, and a shell to
+debug on. The TLS problem below took about ten minutes to find over SSH. It
+would have taken a lot longer reading task logs.
 
-The tradeoff is honest and it cuts the other way at scale: **this is a pet, not
-cattle.** There is one instance in one AZ, patching is mine, and a host failure
-is downtime. If this needed to scale or carry an availability target, the
-answer is Fargate behind an ALB — or an ASG across AZs if the shell access
-genuinely mattered — and the operational cost of orchestration would then be
-buying something real.
+The tradeoff is that this is one box in one availability zone. I patch it
+myself, and if it dies the API is down. If this had to handle real traffic I'd
+move to Fargate behind an ALB, or an autoscaling group across zones if I still
+wanted shell access.
 
-### Why TLS terminates at the proxy
+### Why TLS terminates at Caddy
 
-Uvicorn is an application server, not a hardened edge. Terminating TLS at Caddy
-means:
+Uvicorn is fine as an application server but it isn't built to sit on the open
+internet. Putting Caddy in front means:
 
-- **Certificate lifecycle lives in one place.** Issuance, renewal, and the
-  HTTP→HTTPS redirect are Caddy's job. The app never sees a certificate and
-  never restarts on renewal.
-- **One public process.** A single listener is the entire attack surface facing
-  the internet, rather than exposing the application server directly.
-- **The app stays portable.** Both deployments build from the same
-  [`backend/Dockerfile`](backend/Dockerfile) precisely because the image knows
-  nothing about TLS, hostnames, or certificates — Render terminates TLS at its
-  own edge, Caddy does it here, and the container is unchanged either way.
+- Certificates are handled in one place. Caddy requests them, renews them, and
+  does the HTTP to HTTPS redirect. The app never sees a certificate and doesn't
+  need restarting when one renews.
+- Only one process is exposed, so there's less surface to attack.
+- The container is the same on Render and EC2 because it doesn't know anything
+  about TLS or hostnames. Render terminates TLS at its own edge, Caddy does it
+  here, and the image doesn't change either way.
 
-### Secrets handling
+### Secrets
 
 `backend/.env` holds `DATABASE_URL` and `SUPABASE_URL` on the box and is
-gitignored ([`.gitignore`](.gitignore)). The committed
-[`backend/.env.example`](backend/.env.example) is the contract: every key
-documented with where in the Supabase dashboard to find it, including why
-`DATABASE_URL` must be the transaction pooler string on `:6543` rather than the
-IPv6-only direct one. Values reach the process via `docker run --env-file` at
-container start.
+gitignored. [`backend/.env.example`](backend/.env.example) is committed and
+lists every key along with where to find it in the Supabase dashboard,
+including why `DATABASE_URL` has to be the transaction pooler string on port
+6543 rather than the direct one. Values are passed in with `docker run
+--env-file` when the container starts.
 
-Two honest limitations:
-
-1. **This is manual, file-based secret management.** Rotation means SSH'ing to
-   the box and editing a file; there is no audit trail and no versioning. At any
-   real scale this is AWS Secrets Manager or SSM Parameter Store, injected as a
-   task/instance role rather than a file on disk.
-2. **The image build does not currently exclude `.env`.** See Known Gaps — the
-   `--env-file` injection is sound, but the Dockerfile's build context is not.
+This is manual secret management. Rotating a key means SSHing in and editing a
+file, and there's no record of what changed or when. For anything larger this
+should be AWS Secrets Manager or SSM Parameter Store with an instance role,
+instead of a file sitting on disk.
 
 ### Runbook
 
@@ -279,125 +268,115 @@ sudo systemctl status caddy
 sudo journalctl -u caddy --no-pager | tail -30
 ```
 
-`GET /cache-stats` reports the cache's view of itself and is the quickest way
-to confirm which backend you're actually talking to: EC2 answers
-`{"enabled": false}` because `REDIS_URL` is unset there, while Render reports
-live hit/miss counters.
+`GET /cache-stats` is the quickest way to tell which backend you're actually
+talking to. EC2 returns `{"enabled": false}` because `REDIS_URL` isn't set
+there. Render returns real hit and miss counts.
 
-### Debugging log: the ACME failure
+### The TLS problem I ran into
 
-Worth recording because the symptom pointed nowhere near the cause.
+Caddy started fine and `systemctl` reported `active (running)`, but no
+certificate was ever issued and HTTPS didn't work.
 
-**Symptom.** Caddy started cleanly and `systemctl status caddy` reported
-`active (running)`. No certificate was ever issued, and HTTPS requests failed.
-
-**Error.** Caddy's log showed the challenge failing:
+The log showed the challenge failing:
 
 ```
 Timeout during connect (likely firewall problem)
 ```
 
-…while fetching `/.well-known/acme-challenge/...`.
+while fetching `/.well-known/acme-challenge/...`.
 
-**Diagnosis.** Let's Encrypt does not validate domain ownership by taking your
-word for it over an outbound connection — it connects *inbound*, to port 80, to
-prove you control the host the DNS name points at. The EC2 security group
-allowed SSH only: the launch wizard's "Allow HTTP traffic" checkbox defaults to
-unchecked, so nothing on 80 or 443 was ever admitted.
+The cause was the security group. Let's Encrypt doesn't take your word for it
+over an outbound connection. It connects back to you on port 80 to check that
+you actually control the domain. My security group only allowed SSH, because
+the launch wizard leaves the "Allow HTTP traffic" box unchecked by default, so
+nothing on 80 or 443 was getting in.
 
-**Fix.** Added inbound 80 and 443 to the security group. No restart or manual
-retrigger was needed — Caddy's own ACME retry loop picked it up on its next
-attempt and the certificate issued.
+Adding inbound 80 and 443 fixed it. I didn't have to restart anything. Caddy
+retries on its own and picked the certificate up on the next attempt.
 
-**Takeaway.** A process being healthy locally says nothing about whether it is
-reachable. Two independent layers have to agree — the host firewall (the
-security group) and the application listener — and `active (running)` only ever
-reports on the second. The error string said "firewall problem" and it was
-precisely right; the instinct to distrust it and go re-read the Caddyfile cost
-most of the debugging time.
+What I took from it: a process can be running and still be completely
+unreachable. The security group and the application listener are two separate
+things, and `systemctl` only tells you about one of them. The error message
+said "firewall problem" and that is exactly what it was. I lost most of the
+debugging time assuming it was a generic timeout and re-reading my Caddyfile.
 
-One incidental mercy: after repeated failures Caddy fell back to Let's
-Encrypt's **staging** endpoint, so the retries burned staging quota instead of
-the production rate limit — Let's Encrypt caps failed validations per account,
-per hostname, per hour, and a retry loop against a closed port will exhaust
-that budget quickly. Worth knowing before you lock yourself out of issuance.
+One useful accident: after enough failures Caddy switched over to Let's
+Encrypt's staging endpoint, so the retries stopped counting against the real
+rate limit. Failed validations are capped per account per hostname per hour,
+and a retry loop against a closed port burns through that quickly.
 
 ### Known gaps
 
-Stated plainly, because a deployment that hides these is harder to trust than
-one that names them:
-
-- **No Redis on EC2.** `REDIS_URL` is unset there, so the cache is disabled
-  entirely and every market-data request goes to yfinance — slower, and more
-  rate-limit exposure. Render's deployment has it. The cache also *fails open*
-  by design ([`backend/app/cache.py`](backend/app/cache.py)): a Redis that is
-  down or slow costs one ~1s timeout, then gets skipped for 30s, and requests
-  keep serving fresh data rather than erroring.
+- **No Redis on EC2.** `REDIS_URL` isn't set there, so the cache is off and
+  every market data request goes straight to yfinance. Slower, and more
+  exposure to rate limits. Render has it. The cache fails open by design
+  ([`backend/app/cache.py`](backend/app/cache.py)), so a Redis that's down or
+  slow costs one ~1s timeout, gets skipped for 30 seconds, and requests carry
+  on with fresh data.
 - **Render is still production.** `frontend/src/config.js` defaults to the
-  Render host, and no production environment variable points at EC2. The EC2
-  path is exercised directly (the API answers over HTTPS at its own hostname);
-  wiring the *frontend* to it is a preview-scope change, documented below.
-- **The Docker build context is not filtered.** There is no `.dockerignore`, so
-  `COPY . .` copies the entire `backend/` directory into the image — including
-  the local `.venv/` (~150 MB of a ~151 MB context) and, critically,
-  **`backend/.env` if it is present on the build host, which it is on EC2**.
-  `.gitignore` does not apply to Docker build contexts. The running container
-  gets its secrets correctly via `--env-file`, but the image built on the box
-  also contains a copy of them in a layer. A two-line `.dockerignore`
-  (`.venv/`, `.env`) fixes both the bloat and the leak; until it lands, the
-  image must be treated as sensitive and never pushed to a registry.
-- **CORS is `allow_origins=["*"]`.** Tolerable here rather than correct: auth is
-  a Supabase JWT in the `Authorization` header rather than a cookie, and
-  `allow_credentials=False`, so a browser will not attach ambient credentials
-  and the wildcard widens no CSRF surface. It should still be narrowed to the
-  known Vercel origins — the wildcard is a default nobody chose, and defaults
-  that happen to be safe stop being safe when the auth model changes.
+  Render URL and no production environment variable points at EC2. Pointing the
+  frontend at EC2 is a preview-only change, described below.
+- **There's no `.dockerignore`.** The Dockerfile does `COPY . .`, so the whole
+  `backend/` directory goes into the image. That includes `.venv` (about 150 MB
+  of a 151 MB build context) and `backend/.env` if it's present on the build
+  host, which it is on EC2. `.gitignore` has no effect on Docker builds. The
+  running container gets its secrets the right way through `--env-file`, but the
+  image built on the box has a copy of them in a layer. A `.dockerignore` with
+  `.venv/` and `.env` fixes the size and the leak. Until then the image should
+  be treated as sensitive and never pushed to a registry.
+- **CORS is `allow_origins=["*"]`.** This is okay for now rather than right.
+  Auth is a Supabase JWT in the `Authorization` header rather than a cookie, and
+  `allow_credentials=False`, so the browser won't attach credentials and the
+  wildcard doesn't open a CSRF hole. It should still be narrowed to the known
+  frontend origins. Worth knowing before doing that: Vercel generates a new
+  preview URL per branch, so narrowing means matching on a pattern rather than
+  listing one domain, and the error handler in `backend/main.py` sets its own
+  `Access-Control-Allow-Origin: *` header that would need updating too.
 - **RLS is bypassed on the backend path.** The pooler connects as the `postgres`
-  role, so Row-Level Security does not constrain it; per-user scoping is
-  enforced in application code via the `get_current_user_id` dependency
-  ([`backend/app/auth.py`](backend/app/auth.py)). The RLS policies in
-  [`supabase/schema.sql`](supabase/schema.sql) remain as defense-in-depth for
-  direct client access, but on this path a missing `WHERE user_id = ...` is a
-  data leak, not a caught error.
-- **Single instance, single AZ.** No redundancy and no health-check-driven
-  recovery beyond Docker's `--restart always`, which restarts a crashed
-  container but cannot detect one that is up and serving errors.
-- **Deploys are manual over SSH.** No CI/CD to the box; the runbook above *is*
-  the pipeline. Nothing verifies that what's running matches `origin/main`.
+  role, so Row Level Security doesn't apply to it. Per-user scoping happens in
+  application code through the `get_current_user_id` dependency
+  ([`backend/app/auth.py`](backend/app/auth.py)). The policies in
+  [`supabase/schema.sql`](supabase/schema.sql) still cover direct client access,
+  but on this path a missing `WHERE user_id = ...` is a data leak rather than
+  something the database catches.
+- **One instance, one availability zone.** No redundancy. Docker's
+  `--restart always` brings back a container that crashed, but won't notice one
+  that's up and returning errors.
+- **Deploys are manual over SSH.** There's no pipeline to the box, and nothing
+  checks that what's running matches `main`.
 
-### Verifying the frontend against EC2 without touching production
+### Testing the frontend against EC2 without touching production
 
-The frontend reads its backend from `REACT_APP_API_URL`
-([`frontend/src/config.js`](frontend/src/config.js)), which Vercel scopes per
-environment — so the EC2 backend can be exercised through the real UI without
-altering the production variable:
+The frontend reads its backend URL from `REACT_APP_API_URL`
+([`frontend/src/config.js`](frontend/src/config.js)), and Vercel scopes
+environment variables per environment. So you can point a preview build at EC2
+and leave production alone:
 
-1. Vercel → **Settings → Environment Variables → `REACT_APP_API_URL`**.
-2. Add a value scoped to **Preview only**:
-   `https://alphalab-api.duckdns.org`. Leave the Production value untouched.
-3. Push a branch and open the generated preview URL.
+1. Vercel, then **Settings → Environment Variables → `REACT_APP_API_URL`**.
+2. Add a value scoped to **Preview** only: `https://alphalab-api.duckdns.org`.
+   Leave the Production value as it is.
+3. Push a branch and open the preview URL it generates.
 4. Run a backtest and load a chart.
-5. **DevTools → Network** — confirm the XHRs address the duckdns host and
-   return `200`.
+5. Open DevTools, go to the Network tab, and check the requests go to the
+   duckdns host and come back `200`.
 
-Because production and preview resolve different values for the same variable,
-this exercises the full path against EC2 while `alphalab-lime.vercel.app`
-continues to serve from Render throughout.
+Production and preview resolve different values for the same variable, so
+`alphalab-lime.vercel.app` keeps serving from Render the whole time.
 
 <!--
-Screenshots — capture into docs/ and uncomment:
+Screenshots to capture into docs/ and uncomment:
 
 ![Swagger UI over HTTPS](docs/swagger-tls.png)
-*`/docs` on alphalab-api.duckdns.org, padlock visible — Caddy-terminated TLS.*
+*`/docs` on alphalab-api.duckdns.org with the padlock showing.*
 
 ![Security group inbound rules](docs/security-group.png)
-*Inbound 22/80/443 only. Port 8000 is absent.*
+*Inbound 22, 80 and 443 only. No 8000.*
 
 ![Preview deployment network tab](docs/preview-network.png)
-*Vercel preview issuing 200s against the duckdns host.*
+*Vercel preview build returning 200s from the duckdns host.*
 
 ![Container status](docs/docker-ps.png)
-*`docker ps` — alphalab-backend up with `--restart always`.*
+*`docker ps` with alphalab-backend up.*
 -->
 
 ## Status
