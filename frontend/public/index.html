@@ -24,7 +24,26 @@
       work correctly both with client-side routing and a non-root public URL.
       Learn how to configure a non-root public URL by running `npm run build`.
     -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap">
     <title>AlphaLab</title>
+    <script>
+      // Apply the saved theme before first paint. Without this the page renders
+      // with the :root (dark) tokens for a frame before App mounts, which reads
+      // as a flash of the wrong theme for anyone on light.
+      (function () {
+        try {
+          var saved = localStorage.getItem('alphalab:theme');
+          document.documentElement.setAttribute(
+            'data-theme',
+            saved === 'light' || saved === 'dark' ? saved : 'dark'
+          );
+        } catch (e) {
+          document.documentElement.setAttribute('data-theme', 'dark');
+        }
+      })();
+    </script>
   </head>
   <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
