@@ -1,4 +1,12 @@
+import { useState, useMemo } from 'react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts';
+import {
+  SERIES,
+  makeDateFormatter,
+  legendDataKey,
+  legendWrapperStyle,
+  legendLabelStyle,
+} from '../chartTheme';
 
 const STRATEGY_META = {
   rsi: { label: 'RSI', color: '#2563eb' },
@@ -16,7 +24,6 @@ const sharpeColor = (s) => {
 };
 
 const fmtPct = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v}%`);
-const formatDate = (time) => new Date(time).toLocaleDateString();
 
 // Merge sparse per-strategy equity curves and the daily buy & hold curve onto
 // one time axis; recharts connects the gaps per series via connectNulls.
@@ -35,12 +42,28 @@ const buildRows = (data) => {
 };
 
 export default function CompareView({ data }) {
+  // Declared before the early return so hook order stays stable.
+  const [hidden, setHidden] = useState({});
+
+  const rows = useMemo(() => (data && data.strategies ? buildRows(data) : []), [data]);
+  const formatDate = useMemo(() => makeDateFormatter(rows.map(r => r.time)), [rows]);
+
   if (!data || !data.strategies) return null;
 
-  const rows = buildRows(data);
   const ranked = [...data.strategies].sort(
     (a, b) => (b.total_return_pct ?? -Infinity) - (a.total_return_pct ?? -Infinity)
   );
+
+  const toggleSeries = (entry) => {
+    const key = legendDataKey(entry);
+    if (!key) return;
+    setHidden(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const renderLegendLabel = (value, entry) => {
+    const key = legendDataKey(entry);
+    return <span style={legendLabelStyle(!!hidden[key])}>{value}</span>;
+  };
 
   return (
     <>
@@ -74,18 +97,28 @@ export default function CompareView({ data }) {
               labelFormatter={formatDate}
               formatter={(value, name) => [`$${value.toLocaleString()}`, name]}
             />
-            <Legend wrapperStyle={{ fontFamily: 'monospace', fontSize: '11px' }} />
+            <Legend
+              iconType="square"
+              onClick={toggleSeries}
+              formatter={renderLegendLabel}
+              wrapperStyle={legendWrapperStyle}
+            />
             <Line
               type="monotone"
               dataKey="buyHold"
               name="BUY & HOLD"
-              stroke="#6b7280"
+              stroke={SERIES.overlay1}
               strokeWidth={1}
               strokeDasharray="4 4"
               dot={false}
               connectNulls
+              legendType="square"
+              hide={!!hidden.buyHold}
               isAnimationActive={false}
             />
+            {/* Unlike the other charts, the strategies here are peers being
+                compared against each other rather than overlays on one subject,
+                so they keep distinct colors. Only the benchmark is grayed. */}
             {data.strategies.map(s => (
               s.equity_curve.length > 0 && (
                 <Line
@@ -97,6 +130,8 @@ export default function CompareView({ data }) {
                   strokeWidth={1.5}
                   dot={false}
                   connectNulls
+                  legendType="square"
+                  hide={!!hidden[s.strategy]}
                   isAnimationActive={false}
                 />
               )

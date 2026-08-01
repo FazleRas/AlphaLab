@@ -1,6 +1,61 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, BarChart, Line, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceDot, ReferenceArea } from 'recharts';
 import API from '../config';
+import {
+  SERIES,
+  makeDateFormatter,
+  legendDataKey,
+  legendWrapperStyle,
+  legendLabelStyle,
+  Swatch,
+  tooltipBoxStyle,
+} from '../chartTheme';
+
+// dataKey -> how the series is drawn. Close is the subject of the chart, the
+// moving averages are overlays, so they read as grays behind it.
+const LINES = [
+  { key: 'close', label: 'CLOSE', color: SERIES.primary, width: 1.5, dash: null },
+  { key: 'sma_20', label: 'SMA20', color: SERIES.overlay1, width: 1, dash: '4 4' },
+  { key: 'sma_50', label: 'SMA50', color: SERIES.overlay2, width: 1, dash: '2 3' },
+];
+
+const LABEL_STYLE = { fontSize: '10.5px', letterSpacing: '0.16em', color: 'var(--color-muted)' };
+
+// Recharts clones this with active/payload/label, so `first` and `formatDate`
+// stay as passed.
+const PriceTooltip = ({ active, payload, label, first, formatDate }) => {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div style={tooltipBoxStyle}>
+      <p style={{ ...LABEL_STYLE, margin: '0 0 6px' }}>{formatDate(label)}</p>
+      {payload.map(entry => {
+        const meta = LINES.find(l => l.key === entry.dataKey);
+        const pct = entry.dataKey === 'close' && first
+          ? ((entry.value - first) / first) * 100
+          : null;
+        return (
+          <div
+            key={entry.dataKey}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18 }}
+          >
+            <span style={{ display: 'flex', alignItems: 'center' }}>
+              <Swatch color={meta ? meta.color : entry.color} />
+              <span style={LABEL_STYLE}>{meta ? meta.label : entry.name}</span>
+            </span>
+            <span>
+              ${entry.value}
+              {pct != null && (
+                <span style={{ color: 'var(--color-muted)' }}>
+                  {' '}({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
+                </span>
+              )}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 export default function PriceChart({ ticker }) {
     const [data, setData] = useState([]);
@@ -9,11 +64,37 @@ export default function PriceChart({ ticker }) {
     const [period, setPeriod] = useState('3mo');
     const [chartType, setChartType] = useState('line');
     const [measure, setMeasure] = useState({ a: null, b: null });
+    // Series hidden via the legend. Click an entry to drop it and click again
+    // to bring it back.
+    const [hidden, setHidden] = useState({});
+
+  const toggleSeries = (entry, _index, event) => {
+    // Recharts renders the legend inside the chart wrapper, so a legend click
+    // also reaches LineChart's onClick and would drop a measurement mark.
+    event?.stopPropagation?.();
+    const key = legendDataKey(entry);
+    if (!key) return;
+    setHidden(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const formatDate = useMemo(
+    () => makeDateFormatter(data.map(d => d.date)),
+    [data]
+  );
+
+  const renderLegendLabel = (value, entry) => {
+    const key = legendDataKey(entry);
+    return <span style={legendLabelStyle(!!hidden[key])}>{value}</span>;
+  };
 
   // Click two points on the chart to measure the move between them. Recharts v3
   // gives us activeLabel (the date) on click, not the data point, so we look the
   // close up from the loaded series.
-  const handleChartClick = (e) => {
+  const handleChartClick = (e, event) => {
+    // Belt and braces with the legend's own stopPropagation: whichever way the
+    // click arrives, one that started in the legend is a series toggle, not a
+    // measurement pick.
+    if (event?.target?.closest?.('.recharts-legend-wrapper')) return;
     if (!e || e.activeLabel == null) return;
     const idx = e.activeIndex ?? e.activeTooltipIndex;
     const row = (idx != null && data[idx]) || data.find(d => d.date === e.activeLabel);
@@ -135,31 +216,41 @@ return (
         {chartType === 'line' ? (
         <ResponsiveContainer width="100%" height={300}>
             <LineChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 0 }} onClick={handleChartClick} style={{ cursor: 'crosshair' }}>
-            <XAxis dataKey="date" tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
             <YAxis tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} domain={['auto', 'auto']} width={60} tickFormatter={v => `$${v}`} />
-            <Tooltip contentStyle={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', borderRadius: '4px', fontFamily: 'monospace', fontSize: '12px' }} labelStyle={{ color: '#6b7280' }} formatter={(value, name) => {
-                if (name === 'close' && data.length > 0) {
-                const first = data[0]?.close;
-                const pct = first ? ((value - first) / first * 100).toFixed(2) : 0;
-                return [`$${value} (${pct > 0 ? '+' : ''}${pct}%)`, name.toUpperCase()];
-                }
-                return [`$${value}`, name.toUpperCase()];
-            }} />
-            <Legend wrapperStyle={{ fontFamily: 'monospace', fontSize: '11px' }} />
-            <Line type="monotone" dataKey="close" stroke="#2563eb" dot={false} strokeWidth={1.5} name="close" />
-            <Line type="monotone" dataKey="sma_20" stroke="#00c896" dot={false} strokeWidth={1} strokeDasharray="4 4" name="sma20" />
-            <Line type="monotone" dataKey="sma_50" stroke="#ff4d6d" dot={false} strokeWidth={1} strokeDasharray="4 4" name="sma50" />
+            <Tooltip content={<PriceTooltip first={data[0]?.close} formatDate={formatDate} />} />
+            <Legend
+              iconType="square"
+              onClick={toggleSeries}
+              formatter={renderLegendLabel}
+              wrapperStyle={legendWrapperStyle}
+            />
+            {LINES.map(({ key, label, color, width, dash }) => (
+              <Line
+                key={key}
+                type="monotone"
+                dataKey={key}
+                name={label}
+                stroke={color}
+                strokeWidth={width}
+                strokeDasharray={dash || undefined}
+                dot={false}
+                legendType="square"
+                hide={!!hidden[key]}
+                isAnimationActive={false}
+              />
+            ))}
             {measureRefs()}
             </LineChart>
         </ResponsiveContainer>
         ) : (
         <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 0 }} onClick={handleChartClick} style={{ cursor: 'crosshair' }}>
-            <XAxis dataKey="date" tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
             <YAxis tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} domain={['auto', 'auto']} width={60} tickFormatter={v => `$${v}`} />
-            <Tooltip contentStyle={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', borderRadius: '4px', fontFamily: 'monospace', fontSize: '12px' }} labelStyle={{ color: '#6b7280' }} formatter={(value, name) => [`$${value}`, name.toUpperCase()]} />
-            <Legend wrapperStyle={{ fontFamily: 'monospace', fontSize: '11px' }} />
-            <Bar dataKey="close" fill="#2563eb" name="close" />
+            <Tooltip content={<PriceTooltip first={data[0]?.close} formatDate={formatDate} />} />
+            <Legend iconType="square" wrapperStyle={legendWrapperStyle} />
+            <Bar dataKey="close" fill={SERIES.primary} name="CLOSE" legendType="square" />
             {measureRefs()}
             </BarChart>
         </ResponsiveContainer>

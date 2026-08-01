@@ -14,6 +14,11 @@
   --color-muted: #6f767d;
   --color-pos: #26a69a;
   --color-neg: #ef5350;
+  /* Chart overlay series. Two steps of gray so comparison lines (moving
+     averages, benchmarks) stay separable from each other without competing
+     with the accent-colored subject of the chart. */
+  --color-series-1: #9ba2a9;
+  --color-series-2: #626970;
 }
 
 [data-theme="light"] {
@@ -27,6 +32,9 @@
   --color-muted: #71767c;
   --color-pos: #0b7a6f;
   --color-neg: #c62828;
+  /* Inverted for the paper ground: darker grays read on light. */
+  --color-series-1: #565c63;
+  --color-series-2: #949ba3;
 }
 
 body {
@@ -72,4 +80,17 @@ body {
 .btn-ghost--sm {
   height: 24px;
   padding: 0 9px;
+}
+
+/* Recharts paints a hidden series' legend swatch with a hardcoded #ccc. On the
+   black ground that lands brighter than the active series sitting next to it,
+   so "off" reads louder than "on". Dim it to match the dimmed label instead,
+   and keep it theme-aware. */
+.recharts-legend-item.inactive .recharts-symbols {
+  fill: var(--color-muted);
+  opacity: 0.4;
+}
+
+.recharts-legend-item {
+  cursor: pointer;
 }
