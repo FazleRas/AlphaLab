@@ -82,6 +82,54 @@ body {
   padding: 0 9px;
 }
 
+/* Destructive text affordance: no border or fill, reddens on hover. */
+.btn-remove {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-muted);
+  font-family: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+  transition: color 120ms linear;
+}
+
+.btn-remove:hover {
+  color: var(--color-neg);
+}
+
+/* Filter / strategy / mode / range toggles. On is a solid accent fill rather
+   than the old translucent tint, which never resolved against two grounds. */
+.chip {
+  padding: 4px 10px;
+  border: 1px solid var(--color-divider);
+  background: transparent;
+  color: var(--color-muted);
+  font-family: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  cursor: pointer;
+  transition: color 120ms linear, border-color 120ms linear, background-color 120ms linear;
+}
+
+.chip:hover {
+  color: var(--color-text);
+  border-color: var(--color-text);
+}
+
+.chip--on,
+.chip--on:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.chip--on:hover {
+  background: var(--color-accent-hi);
+  border-color: var(--color-accent-hi);
+}
+
 /* Recharts paints a hidden series' legend swatch with a hardcoded #ccc. On the
    black ground that lands brighter than the active series sitting next to it,
    so "off" reads louder than "on". Dim it to match the dimmed label instead,

@@ -17,6 +17,23 @@ export const SERIES = {
   negative: 'var(--color-neg)',
 };
 
+/**
+ * Palette for charts whose lines are peers rather than one subject plus
+ * overlays -- the strategy comparison, where graying everything but one line
+ * would defeat the point of the view.
+ *
+ * These are fixed hues rather than theme tokens because they have to stay
+ * distinguishable from each other, which a light/dark pair can't guarantee.
+ * All are mid-tone 600-weight values, chosen to hold contrast on both the
+ * black and the paper ground rather than washing out on either.
+ */
+export const PEER_SERIES = {
+  rsi: 'var(--color-accent)',
+  macd: '#ea580c',
+  combined: '#9333ea',
+  golden_cross: '#ca8a04',
+};
+
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 // Backend dates are UTC midnight — either "2026-07-28" or "2026-07-28T00:00:00Z".

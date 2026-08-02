@@ -4,11 +4,10 @@ import useColdStartHint from '../hooks/useColdStartHint';
 import API from '../config';
 
 const rsiColor = (rsi) => {
-  if (!rsi) return '#e2e2e2';
-  if (rsi > 70) return '#ff4d6d';
-  if (rsi < 30) return '#00c896';
-  if (rsi > 60) return '#f97316';
-  return '#e2e2e2';
+  if (!rsi) return 'var(--color-text)';
+  if (rsi > 70) return 'var(--color-neg)';
+  if (rsi < 30) return 'var(--color-pos)';
+  return 'var(--color-text)';
 };
 
 // Per-user saved tickers. Persistence goes through the FastAPI backend
@@ -93,27 +92,27 @@ export default function Watchlist() {
           onChange={e => setInput(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && addTicker()}
           placeholder="Add a ticker: AAPL, NVDA..."
-          className="flex-1 px-4 py-3 font-mono text-sm rounded outline-none"
-          style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
+          className="flex-1 px-4 py-3 font-mono text-sm outline-none"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-divider)', color: 'var(--color-text)' }}
         />
         <button
           onClick={addTicker}
-          className="px-6 py-3 font-mono text-sm rounded"
-          style={{ backgroundColor: '#2563eb', color: '#fff' }}
+          className="px-6 py-3 font-mono text-sm"
+          style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}
         >
           ADD
         </button>
       </div>
 
       {waking && loading && (
-        <p className="font-mono text-sm mb-4" style={{ color: '#f97316' }}>
+        <p className="font-mono text-sm mb-4" style={{ color: 'var(--color-accent)' }}>
           Waking up the backend. The first request after idle can take ~30s.
         </p>
       )}
-      {error && <p className="font-mono text-sm mb-4" style={{ color: '#ff4d6d' }}>{error}</p>}
+      {error && <p className="font-mono text-sm mb-4" style={{ color: 'var(--color-neg)' }}>{error}</p>}
 
       {tickers.length === 0 && !loading && (
-        <p className="font-mono text-sm" style={{ color: '#6b7280' }}>
+        <p className="font-mono text-sm" style={{ color: 'var(--color-muted)' }}>
           Your watchlist is empty. Add a ticker above and it'll be saved to your account.
         </p>
       )}
@@ -121,35 +120,32 @@ export default function Watchlist() {
       {tickers.map(symbol => {
         const q = quotes[symbol];
         return (
-          <div key={symbol} className="flex items-center justify-between p-4 rounded mb-3"
-               style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
+          <div key={symbol} className="flex items-center justify-between p-4 mb-3"
+               style={{ border: '1px solid var(--color-divider)' }}>
             <div className="flex items-center gap-6">
-              <span className="font-mono text-lg" style={{ color: '#e2e2e2' }}>{symbol}</span>
+              <span className="font-mono text-lg" style={{ color: 'var(--color-text)' }}>{symbol}</span>
               {q ? (
                 <>
-                  <span className="font-mono text-sm" style={{ color: '#2563eb' }}>${q.close}</span>
-                  <span className="font-mono text-xs" style={{ color: '#6b7280' }}>
+                  <span className="font-mono text-sm" style={{ color: 'var(--color-accent)' }}>${q.close}</span>
+                  <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>
                     RSI <span style={{ color: rsiColor(q.rsi) }}>{q.rsi}</span>
                   </span>
                   {q.signals?.bullish_trend && (
-                    <span className="font-mono text-xs px-2 py-0.5 rounded"
-                          style={{ backgroundColor: '#00c89620', color: '#00c896' }}>BULLISH</span>
+                    <span className="font-mono text-xs" style={{ color: 'var(--color-pos)' }}>BULLISH</span>
                   )}
                   {q.signals?.bearish_trend && (
-                    <span className="font-mono text-xs px-2 py-0.5 rounded"
-                          style={{ backgroundColor: '#ff4d6d20', color: '#ff4d6d' }}>BEARISH</span>
+                    <span className="font-mono text-xs" style={{ color: 'var(--color-neg)' }}>BEARISH</span>
                   )}
                 </>
               ) : (
-                <span className="font-mono text-xs" style={{ color: '#6b7280' }}>
+                <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>
                   {loading ? 'loading...' : '-'}
                 </span>
               )}
             </div>
             <button
               onClick={() => removeTicker(symbol)}
-              className="font-mono text-xs px-3 py-1 rounded"
-              style={{ backgroundColor: '#1e1e2e', color: '#6b7280' }}
+              className="btn-remove"
             >
               REMOVE
             </button>

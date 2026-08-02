@@ -105,10 +105,10 @@ export default function PriceChart({ ticker }) {
 
   const measureRefs = () => {
     const els = [];
-    if (measure.a) els.push(<ReferenceDot key="a" x={measure.a.date} y={measure.a.close} r={4} fill="#f97316" stroke="#0a0a0f" ifOverflow="visible" />);
+    if (measure.a) els.push(<ReferenceDot key="a" x={measure.a.date} y={measure.a.close} r={4} fill="var(--color-accent)" stroke="var(--color-bg)" ifOverflow="visible" />);
     if (measure.b) {
-      els.push(<ReferenceArea key="area" x1={measure.a.date} x2={measure.b.date} fill="#f97316" fillOpacity={0.08} ifOverflow="visible" />);
-      els.push(<ReferenceDot key="b" x={measure.b.date} y={measure.b.close} r={4} fill="#f97316" stroke="#0a0a0f" ifOverflow="visible" />);
+      els.push(<ReferenceArea key="area" x1={measure.a.date} x2={measure.b.date} fill="var(--color-accent)" fillOpacity={0.08} ifOverflow="visible" />);
+      els.push(<ReferenceDot key="b" x={measure.b.date} y={measure.b.close} r={4} fill="var(--color-accent)" stroke="var(--color-bg)" ifOverflow="visible" />);
     }
     return els;
   };
@@ -145,35 +145,25 @@ export default function PriceChart({ ticker }) {
   if (!ticker) return null;
 
 return (
-  <div className="rounded p-4 mt-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
+  <div className="p-4 mt-4" style={{ border: '1px solid var(--color-divider)' }}>
     <div className="flex items-center justify-between mb-4">
-      <p className="font-mono text-xs tracking-widest" style={{ color: '#6b7280' }}>PRICE CHART</p>
+      <p className="font-mono text-xs tracking-widest" style={{ color: 'var(--color-muted)' }}>{ticker} CHART</p>
       <div className="flex items-center gap-2">
         {periods.map(p => (
           <button
             key={p}
             onClick={() => setPeriod(p)}
-            className="font-mono text-xs px-2 py-1 rounded"
-            style={{
-              backgroundColor: period === p ? '#2563eb20' : 'transparent',
-              border: `1px solid ${period === p ? '#2563eb' : '#1e1e2e'}`,
-              color: period === p ? '#2563eb' : '#6b7280',
-            }}
+            className={`chip${period === p ? ' chip--on' : ''}`}
           >
             {p.toUpperCase()}
           </button>
         ))}
-        <div className="flex gap-2 ml-2" style={{ borderLeft: '1px solid #1e1e2e', paddingLeft: '8px' }}>
+        <div className="flex gap-2 ml-2" style={{ borderLeft: '1px solid var(--color-divider)', paddingLeft: '8px' }}>
           {['line', 'bar'].map(type => (
             <button
               key={type}
               onClick={() => setChartType(type)}
-              className="font-mono text-xs px-2 py-1 rounded"
-              style={{
-                backgroundColor: chartType === type ? '#2563eb20' : 'transparent',
-                border: `1px solid ${chartType === type ? '#2563eb' : '#1e1e2e'}`,
-                color: chartType === type ? '#2563eb' : '#6b7280',
-              }}
+              className={`chip${chartType === type ? ' chip--on' : ''}`}
             >
               {type.toUpperCase()}
             </button>
@@ -185,20 +175,20 @@ return (
     {!loading && !error && (
       <div className="flex items-center gap-4 mb-3 font-mono text-xs flex-wrap">
         {!measure.a ? (
-          <span style={{ color: '#6b7280' }}>Tip: click two points to measure the move between them.</span>
+          <span style={{ color: 'var(--color-muted)' }}>Tip: click two points to measure the move between them.</span>
         ) : (
           <>
-            <span style={{ color: '#f97316' }}>A {measure.a.date} ${measure.a.close}</span>
-            {measure.b && <span style={{ color: '#f97316' }}>B {measure.b.date} ${measure.b.close}</span>}
+            <span style={{ color: 'var(--color-accent)' }}>A {measure.a.date} ${measure.a.close}</span>
+            {measure.b && <span style={{ color: 'var(--color-accent)' }}>B {measure.b.date} ${measure.b.close}</span>}
             {delta && (
-              <span style={{ color: delta.abs >= 0 ? '#00c896' : '#ff4d6d' }}>
+              <span style={{ color: delta.abs >= 0 ? 'var(--color-pos)' : 'var(--color-neg)' }}>
                 {delta.abs >= 0 ? '+' : ''}{delta.pct.toFixed(2)}% ({delta.abs >= 0 ? '+' : ''}${delta.abs.toFixed(2)}) · {delta.days}d
               </span>
             )}
             <button
               onClick={() => setMeasure({ a: null, b: null })}
-              className="px-2 py-0.5 rounded"
-              style={{ border: '1px solid #1e1e2e', color: '#6b7280' }}
+              className="px-2 py-0.5"
+              style={{ border: '1px solid var(--color-divider)', color: 'var(--color-muted)' }}
             >
               CLEAR
             </button>
@@ -208,16 +198,16 @@ return (
     )}
 
       {loading ? (
-        <p className="font-mono text-xs" style={{ color: '#6b7280' }}>LOADING...</p>
+        <p className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>LOADING...</p>
       ) : error ? (
-        <p className="font-mono text-xs" style={{ color: '#ff4d6d' }}>{error}</p>
+        <p className="font-mono text-xs" style={{ color: 'var(--color-neg)' }}>{error}</p>
       ) : (
         <>
         {chartType === 'line' ? (
         <ResponsiveContainer width="100%" height={300}>
             <LineChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 0 }} onClick={handleChartClick} style={{ cursor: 'crosshair' }}>
-            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} domain={['auto', 'auto']} width={60} tickFormatter={v => `$${v}`} />
+            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }} tickLine={false} axisLine={false} domain={['auto', 'auto']} width={60} tickFormatter={v => `$${v}`} />
             <Tooltip content={<PriceTooltip first={data[0]?.close} formatDate={formatDate} />} />
             <Legend
               iconType="square"
@@ -246,8 +236,8 @@ return (
         ) : (
         <ResponsiveContainer width="100%" height={300}>
             <BarChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 0 }} onClick={handleChartClick} style={{ cursor: 'crosshair' }}>
-            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }} tickLine={false} axisLine={false} domain={['auto', 'auto']} width={60} tickFormatter={v => `$${v}`} />
+            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
+            <YAxis tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }} tickLine={false} axisLine={false} domain={['auto', 'auto']} width={60} tickFormatter={v => `$${v}`} />
             <Tooltip content={<PriceTooltip first={data[0]?.close} formatDate={formatDate} />} />
             <Legend iconType="square" wrapperStyle={legendWrapperStyle} />
             <Bar dataKey="close" fill={SERIES.primary} name="CLOSE" legendType="square" />

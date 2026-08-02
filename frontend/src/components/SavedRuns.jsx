@@ -47,27 +47,27 @@ export default function SavedRuns({ user, refreshKey, onLoad }) {
   if (!user) return null;
 
   return (
-    <div className="p-4 rounded mb-6" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
+    <div className="p-4 mb-6" style={{ border: '1px solid var(--color-divider)' }}>
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between"
       >
-        <span className="font-mono text-xs tracking-widest" style={{ color: '#6b7280' }}>
+        <span className="font-mono text-xs tracking-widest" style={{ color: 'var(--color-muted)' }}>
           SAVED RUNS{runs.length ? ` (${runs.length})` : ''}
         </span>
-        <span className="font-mono text-xs" style={{ color: '#6b7280' }}>{open ? '−' : '+'}</span>
+        <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>{open ? '−' : '+'}</span>
       </button>
 
       {open && (
         <div className="mt-4">
-          {error && <p className="font-mono text-xs mb-3" style={{ color: '#ff4d6d' }}>{error}</p>}
+          {error && <p className="font-mono text-xs mb-3" style={{ color: 'var(--color-neg)' }}>{error}</p>}
 
           {loading && runs.length === 0 && (
-            <p className="font-mono text-xs" style={{ color: '#6b7280' }}>loading...</p>
+            <p className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>loading...</p>
           )}
 
           {!loading && runs.length === 0 && !error && (
-            <p className="font-mono text-xs" style={{ color: '#6b7280' }}>
+            <p className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>
               No saved runs yet. Run a single backtest and hit SAVE RUN to pin it here.
             </p>
           )}
@@ -78,30 +78,30 @@ export default function SavedRuns({ user, refreshKey, onLoad }) {
             return (
               <div key={run.id}
                    className="flex items-center justify-between py-2"
-                   style={{ borderBottom: '1px solid #1e1e2e' }}>
+                   style={{ borderBottom: '1px solid var(--color-hairline)' }}>
                 <button
                   onClick={() => onLoad(run)}
                   title="Load this run in the backtester"
                   className="flex items-center gap-4 text-left flex-1 min-w-0"
                 >
-                  <span className="font-mono text-sm" style={{ color: '#e2e2e2' }}>{run.ticker}</span>
-                  <span className="font-mono text-xs" style={{ color: '#2563eb' }}>{fmtStrategy(run.strategy)}</span>
-                  <span className="font-mono text-xs" style={{ color: '#6b7280' }}>{(run.period || '').toUpperCase()}</span>
+                  <span className="font-mono text-sm" style={{ color: 'var(--color-text)' }}>{run.ticker}</span>
+                  <span className="font-mono text-xs" style={{ color: 'var(--color-accent)' }}>{fmtStrategy(run.strategy)}</span>
+                  <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>{(run.period || '').toUpperCase()}</span>
                   {ret != null && (
-                    <span className="font-mono text-xs" style={{ color: ret > 0 ? '#00c896' : '#ff4d6d' }}>
+                    <span className="font-mono text-xs" style={{ color: ret > 0 ? 'var(--color-pos)' : 'var(--color-neg)' }}>
                       {fmtPct(ret)}
                     </span>
                   )}
                   {sharpe != null && (
-                    <span className="font-mono text-xs" style={{ color: '#6b7280' }}>
+                    <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>
                       SHARPE {Number(sharpe).toFixed(2)}
                     </span>
                   )}
                 </button>
                 <button
                   onClick={() => remove(run.id)}
-                  className="font-mono text-xs px-3 py-1 rounded ml-3"
-                  style={{ backgroundColor: '#1e1e2e', color: '#6b7280' }}
+                  className="font-mono text-xs px-3 py-1 ml-3"
+                  style={{ backgroundColor: 'var(--color-divider)', color: 'var(--color-muted)' }}
                 >
                   DELETE
                 </button>

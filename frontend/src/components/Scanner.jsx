@@ -12,16 +12,15 @@ const signals = [
 ];
 
 const rsiColor = (rsi) => {
-  if (!rsi) return '#e2e2e2';
-  if (rsi > 70) return '#ff4d6d';
-  if (rsi < 30) return '#00c896';
-  if (rsi > 60) return '#f97316';
-  return '#e2e2e2';
+  if (!rsi) return 'var(--color-text)';
+  if (rsi > 70) return 'var(--color-neg)';
+  if (rsi < 30) return 'var(--color-pos)';
+  return 'var(--color-text)';
 };
 
 const macdColor = (histogram) => {
-  if (!histogram) return '#e2e2e2';
-  return histogram > 0 ? '#00c896' : '#ff4d6d';
+  if (!histogram) return 'var(--color-text)';
+  return histogram > 0 ? 'var(--color-pos)' : 'var(--color-neg)';
 };
 
 export default function Scanner() {
@@ -31,6 +30,8 @@ export default function Scanner() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const waking = useColdStartHint(loading);
+
+  const activeFilterCount = Object.values(filters).filter(Boolean).length;
 
   const toggleFilter = (key) => {
     setFilters(prev => ({
@@ -68,35 +69,30 @@ export default function Scanner() {
           onChange={e => setTickers(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && scan()}
           placeholder="AAPL,NVDA,TSLA,MSFT,AMD..."
-          className="flex-1 px-4 py-3 font-mono text-sm rounded outline-none"
-          style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e', color: '#e2e2e2' }}
+          className="flex-1 px-4 py-3 font-mono text-sm outline-none"
+          style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-divider)', color: 'var(--color-text)' }}
         />
         <button
         onClick={(e) => {
             e.preventDefault();
             scan();
         }}
-        className="px-6 py-3 font-mono text-sm rounded"
-        style={{ backgroundColor: '#2563eb', color: '#fff' }}
+        className="px-6 py-3 font-mono text-sm"
+        style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}
         >
         {loading ? 'SCANNING...' : 'SCAN'}
         </button>
       </div>
 
       {/* Filters */}
-      <div className="p-4 rounded mb-6" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
-        <p className="font-mono text-xs mb-3 tracking-widest" style={{ color: '#6b7280' }}>FILTERS</p>
+      <div className="p-4 mb-6" style={{ border: '1px solid var(--color-divider)' }}>
+        <p className="font-mono text-xs mb-3 tracking-widest" style={{ color: 'var(--color-muted)' }}>FILTERS</p>
         <div className="flex flex-wrap gap-2">
           {signals.map(({ key, label }) => (
             <button
               key={key}
               onClick={() => toggleFilter(key)}
-              className="px-3 py-1 font-mono text-xs rounded transition-all"
-              style={{
-                backgroundColor: filters[key] ? '#2563eb20' : '#1e1e2e',
-                border: `1px solid ${filters[key] ? '#2563eb' : '#1e1e2e'}`,
-                color: filters[key] ? '#2563eb' : '#6b7280',
-              }}
+              className={`chip${filters[key] ? ' chip--on' : ''}`}
             >
               {label}
             </button>
@@ -105,38 +101,41 @@ export default function Scanner() {
       </div>
 
       {waking && loading && (
-        <p className="font-mono text-sm mb-4" style={{ color: '#f97316' }}>
+        <p className="font-mono text-sm mb-4" style={{ color: 'var(--color-accent)' }}>
           Waking up the backend — the first request after idle can take ~30s.
         </p>
       )}
-      {error && <p className="font-mono text-sm mb-4" style={{ color: '#ff4d6d' }}>{error}</p>}
+      {error && <p className="font-mono text-sm mb-4" style={{ color: 'var(--color-neg)' }}>{error}</p>}
 
       {/* Results */}
       {results && (
         <div>
-          <p className="font-mono text-xs mb-4 tracking-widest" style={{ color: '#6b7280' }}>
-            {results.length} RESULT{results.length !== 1 ? 'S' : ''}
-          </p>
+          {/* Count bar: results and how many filters produced them. */}
+          <div className="p-4 mb-4" style={{ border: '1px solid var(--color-divider)' }}>
+            <p className="font-mono text-xs tracking-widest" style={{ color: 'var(--color-muted)' }}>
+              {results.length} RESULT{results.length !== 1 ? 'S' : ''} - {activeFilterCount} FILTER{activeFilterCount !== 1 ? 'S' : ''} ACTIVE
+            </p>
+          </div>
           {results.length === 0 && (
-            <p className="font-mono text-sm" style={{ color: '#6b7280' }}>No tickers matched your filters.</p>
+            <p className="font-mono text-sm" style={{ color: 'var(--color-muted)' }}>No tickers matched your filters.</p>
           )}
           {results.map(r => (
-            <div key={r.ticker} className="p-4 rounded mb-3" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
+            <div key={r.ticker} className="p-4 mb-3" style={{ border: '1px solid var(--color-divider)' }}>
                 
                 {/* Header */}
                 <div className="flex items-center justify-between mb-4">
-                <span className="font-mono text-lg" style={{ color: '#e2e2e2' }}>{r.ticker}</span>
+                <span className="font-mono text-lg" style={{ color: 'var(--color-text)' }}>{r.ticker}</span>
                 <div className="text-right">
-                    <span className="font-mono text-lg" style={{ color: '#2563eb' }}>${r.close}</span>
+                    <span className="font-mono text-lg" style={{ color: 'var(--color-accent)' }}>${r.close}</span>
                 </div>
                 </div>
 
                 {/* Signals split into two columns */}
-                <div className="grid grid-cols-2 gap-4 mb-4" style={{ borderTop: '1px solid #1e1e2e', paddingTop: '12px' }}>
+                <div className="grid grid-cols-2 gap-4 mb-4" style={{ borderTop: '1px solid var(--color-hairline)', paddingTop: '12px' }}>
                 
                 {/* Bullish */}
                 <div>
-                    <p className="font-mono text-xs mb-2 tracking-widest" style={{ color: '#00c896' }}>BULLISH</p>
+                    <p className="font-mono text-xs mb-2 tracking-widest" style={{ color: 'var(--color-pos)' }}>BULLISH</p>
                     {[
                     ['BULLISH TREND', r.signals.bullish_trend],
                     ['PRICE > SMA20', r.signals.price_above_sma20],
@@ -145,19 +144,18 @@ export default function Scanner() {
                     ['MACD CROSSOVER', r.signals.macd_bullish_crossover],
                     ['RSI OVERSOLD', r.signals.rsi_oversold],
                     ].map(([label, val]) => (
-                    <div key={label} className="flex items-center justify-between py-1" style={{ borderBottom: '1px solid #1e1e2e' }}>
-                        <span className="font-mono text-xs" style={{ color: '#6b7280' }}>{label}</span>
-                        <span className="font-mono text-xs px-2 py-0.5 rounded" style={{
-                        backgroundColor: val ? '#00c89620' : 'transparent',
-                        color: val ? '#00c896' : '#6b7280',
+                    <div key={label} className="flex items-center justify-between py-1" style={{ borderBottom: '1px solid var(--color-hairline)' }}>
+                        <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>{label}</span>
+                        <span className="font-mono text-xs" style={{
+                        color: val ? 'var(--color-pos)' : 'var(--color-muted)',
                         }}>{val ? 'YES' : '—'}</span>
                     </div>
                     ))}
                 </div>
 
                 {/* Divider */}
-                <div style={{ borderLeft: '1px solid #1e1e2e', paddingLeft: '16px' }}>
-                    <p className="font-mono text-xs mb-2 tracking-widest" style={{ color: '#ff4d6d' }}>BEARISH</p>
+                <div style={{ borderLeft: '1px solid var(--color-divider)', paddingLeft: '16px' }}>
+                    <p className="font-mono text-xs mb-2 tracking-widest" style={{ color: 'var(--color-neg)' }}>BEARISH</p>
                     {[
                     ['BEARISH TREND', r.signals.bearish_trend],
                     ['PRICE < SMA20', !r.signals.price_above_sma20],
@@ -166,11 +164,10 @@ export default function Scanner() {
                     ['MACD CROSSOVER', r.signals.macd_bearish_crossover],
                     ['RSI OVERBOUGHT', r.signals.rsi_overbought],
                     ].map(([label, val]) => (
-                    <div key={label} className="flex items-center justify-between py-1" style={{ borderBottom: '1px solid #1e1e2e' }}>
-                        <span className="font-mono text-xs" style={{ color: '#6b7280' }}>{label}</span>
-                        <span className="font-mono text-xs px-2 py-0.5 rounded" style={{
-                        backgroundColor: val ? '#ff4d6d20' : 'transparent',
-                        color: val ? '#ff4d6d' : '#6b7280',
+                    <div key={label} className="flex items-center justify-between py-1" style={{ borderBottom: '1px solid var(--color-hairline)' }}>
+                        <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>{label}</span>
+                        <span className="font-mono text-xs" style={{
+                        color: val ? 'var(--color-neg)' : 'var(--color-muted)',
                         }}>{val ? 'YES' : '—'}</span>
                     </div>
                     ))}
@@ -178,11 +175,11 @@ export default function Scanner() {
                 </div>
 
                 {/* Stats row */}
-                <div className="flex gap-6 pt-2" style={{ borderTop: '1px solid #1e1e2e' }}>
-                <span className="font-mono text-xs" style={{ color: '#6b7280' }}>RSI <span style={{ color: rsiColor(r.rsi) }}>{r.rsi}</span></span>
-                <span className="font-mono text-xs" style={{ color: '#6b7280' }}>MACD <span style={{ color: macdColor(r.macd_histogram) }}>{r.macd}</span></span>
-                <span className="font-mono text-xs" style={{ color: '#6b7280' }}>SMA20 <span style={{ color: '#e2e2e2' }}>{r.sma_20}</span></span>
-                <span className="font-mono text-xs" style={{ color: '#6b7280' }}>SMA50 <span style={{ color: '#e2e2e2' }}>{r.sma_50}</span></span>
+                <div className="flex gap-6 pt-2" style={{ borderTop: '1px solid var(--color-hairline)' }}>
+                <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>RSI <span style={{ color: rsiColor(r.rsi) }}>{r.rsi}</span></span>
+                <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>MACD <span style={{ color: macdColor(r.macd_histogram) }}>{r.macd}</span></span>
+                <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>SMA20 <span style={{ color: 'var(--color-text)' }}>{r.sma_20}</span></span>
+                <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>SMA50 <span style={{ color: 'var(--color-text)' }}>{r.sma_50}</span></span>
                 </div>
 
             </div>

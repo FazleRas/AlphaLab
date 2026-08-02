@@ -112,23 +112,23 @@ export default function EquityCurveChart({ data, benchmark, spy }) {
   };
 
   return (
-    <div className="rounded p-4 mb-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
-      <p className="font-mono text-xs mb-4 tracking-widest" style={{ color: '#6b7280' }}>EQUITY CURVE</p>
+    <div className="p-4 mb-4" style={{ border: '1px solid var(--color-divider)' }}>
+      <p className="font-mono text-xs mb-4 tracking-widest" style={{ color: 'var(--color-muted)' }}>EQUITY CURVE</p>
       <ResponsiveContainer width="100%" height={300}>
         <ComposedChart data={chartData} margin={{ top: 5, right: 5, bottom: 5, left: 0 }}>
-          <CartesianGrid stroke="#1e1e2e" vertical={false} />
+          <CartesianGrid stroke="var(--color-divider)" vertical={false} />
           <XAxis
             dataKey="time"
             type="number"
             domain={['dataMin', 'dataMax']}
             tickFormatter={formatDate}
-            tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }}
+            tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }}
             tickLine={false}
             axisLine={false}
           />
           <YAxis
             domain={['auto', 'auto']}
-            tick={{ fontFamily: 'monospace', fontSize: 10, fill: '#6b7280' }}
+            tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }}
             tickLine={false}
             axisLine={false}
             width={70}
