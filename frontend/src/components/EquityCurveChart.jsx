@@ -142,7 +142,7 @@ export default function EquityCurveChart({ data, benchmark, spy }) {
             wrapperStyle={legendWrapperStyle}
           />
           <Area
-            type="monotone"
+            type="linear"
             dataKey="equity"
             name={SERIES_META.equity.label}
             stackId="equity"
@@ -155,7 +155,7 @@ export default function EquityCurveChart({ data, benchmark, spy }) {
             isAnimationActive={false}
           />
           <Area
-            type="monotone"
+            type="linear"
             dataKey="underwater"
             stackId="equity"
             stroke="none"
@@ -170,7 +170,7 @@ export default function EquityCurveChart({ data, benchmark, spy }) {
           />
           {hasBenchmark && (
             <Line
-              type="monotone"
+              type="linear"
               dataKey="buyHold"
               name={SERIES_META.buyHold.label}
               stroke={SERIES_META.buyHold.color}
@@ -184,7 +184,7 @@ export default function EquityCurveChart({ data, benchmark, spy }) {
           )}
           {hasSpy && (
             <Line
-              type="monotone"
+              type="linear"
               dataKey="spy"
               name={SERIES_META.spy.label}
               stroke={SERIES_META.spy.color}

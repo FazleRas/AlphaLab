@@ -218,7 +218,7 @@ return (
             {LINES.map(({ key, label, color, width, dash }) => (
               <Line
                 key={key}
-                type="monotone"
+                type="linear"
                 dataKey={key}
                 name={label}
                 stroke={color}

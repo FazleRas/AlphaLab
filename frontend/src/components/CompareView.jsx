@@ -105,7 +105,7 @@ export default function CompareView({ data }) {
               wrapperStyle={legendWrapperStyle}
             />
             <Line
-              type="monotone"
+              type="linear"
               dataKey="buyHold"
               name="BUY & HOLD"
               stroke={SERIES.overlay1}
@@ -124,7 +124,7 @@ export default function CompareView({ data }) {
               s.equity_curve.length > 0 && (
                 <Line
                   key={s.strategy}
-                  type="monotone"
+                  type="linear"
                   dataKey={s.strategy}
                   name={STRATEGY_META[s.strategy].label}
                   stroke={STRATEGY_META[s.strategy].color}

@@ -5,15 +5,18 @@
 :root,
 [data-theme="dark"] {
   --color-bg: #000000;
-  --color-surface: #0b0c0e;
+  /* Inputs and tooltips sit on the same true black as the page; their border
+     is what separates them, not a fill. */
+  --color-surface: #000000;
   --color-text: #e6e8ea;
   --color-accent: #2563eb;
   --color-accent-hi: #3b82f6;
   --color-divider: rgba(230, 232, 234, 0.14);
   --color-hairline: rgba(230, 232, 234, 0.08);
   --color-muted: #6f767d;
-  --color-pos: #26a69a;
-  --color-neg: #ef5350;
+  /* Robinhood's up/down pair. */
+  --color-pos: #00c805;
+  --color-neg: #ff5000;
   /* Chart overlay series. Two steps of gray so comparison lines (moving
      averages, benchmarks) stay separable from each other without competing
      with the accent-colored subject of the chart. */
@@ -30,8 +33,9 @@
   --color-divider: rgba(29, 31, 32, 0.2);
   --color-hairline: rgba(29, 31, 32, 0.1);
   --color-muted: #71767c;
-  --color-pos: #0b7a6f;
-  --color-neg: #c62828;
+  /* Same Robinhood hues, darkened to stay legible on the paper ground. */
+  --color-pos: #00840b;
+  --color-neg: #c73e00;
   /* Inverted for the paper ground: darker grays read on light. */
   --color-series-1: #565c63;
   --color-series-2: #949ba3;
