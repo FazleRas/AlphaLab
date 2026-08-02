@@ -3,22 +3,27 @@ import { useState } from 'react';
 // Sharpe uses fixed bands (matching the stat card); other metrics use a
 // diverging scale relative to the grid's own min/max.
 const sharpeBand = (s) => {
-  if (s == null) return '#6b7280';
-  if (s < 0) return '#ff4d6d';
-  if (s < 1) return '#f97316';
-  if (s < 2) return '#e2e2e2';
-  return '#00c896';
+  if (s == null) return 'var(--color-muted)';
+  if (s < 0) return 'var(--color-neg)';
+  if (s < 1) return 'var(--color-accent)';
+  if (s < 2) return 'var(--color-text)';
+  return 'var(--color-pos)';
 };
 
 const lerp = (a, b, t) => Math.round(a + (b - a) * t);
-// red (0) → neutral (0.5) → green (1)
+// Loss #ff2f45 → near-black (break-even) → gain #00c9a0. These are literal
+// rather than tokens because the ramp has to interpolate between the
+// endpoints, which CSS variables can't do here; they track --color-neg and
+// --color-pos by hand.
+const HEAT_LOSS = [255, 47, 69];
+const HEAT_MID = [18, 18, 18];
+const HEAT_GAIN = [0, 201, 160];
+
 const heatColor = (t) => {
-  if (t <= 0.5) {
-    const u = t / 0.5;
-    return `rgb(${lerp(255, 30, u)},${lerp(77, 30, u)},${lerp(109, 46, u)})`;
-  }
-  const u = (t - 0.5) / 0.5;
-  return `rgb(${lerp(30, 0, u)},${lerp(30, 200, u)},${lerp(46, 150, u)})`;
+  const [from, to, u] = t <= 0.5
+    ? [HEAT_LOSS, HEAT_MID, t / 0.5]
+    : [HEAT_MID, HEAT_GAIN, (t - 0.5) / 0.5];
+  return `rgb(${lerp(from[0], to[0], u)},${lerp(from[1], to[1], u)},${lerp(from[2], to[2], u)})`;
 };
 
 const fmt = (metric, v) => {
@@ -45,7 +50,7 @@ export default function SweepHeatmap({ data, metric, onSelect }) {
   const max = Math.max(...vals);
 
   const bg = (v) => {
-    if (v == null) return '#0a0a0f';
+    if (v == null) return 'var(--color-bg)';
     if (metric === 'sharpe') return `${sharpeBand(v)}40`;
     const t = max === min ? 0.5 : (v - min) / (max - min);
     return heatColor(t);
@@ -54,11 +59,11 @@ export default function SweepHeatmap({ data, metric, onSelect }) {
   const detail = hover || best;
 
   return (
-    <div className="rounded p-4 mb-4" style={{ backgroundColor: '#111118', border: '1px solid #1e1e2e' }}>
-      <p className="font-mono text-xs mb-1 tracking-widest" style={{ color: '#6b7280' }}>
+    <div className="p-4 mb-4" style={{ border: '1px solid var(--color-divider)' }}>
+      <p className="font-mono text-xs mb-1 tracking-widest" style={{ color: 'var(--color-muted)' }}>
         PARAMETER SWEEP — {METRIC_LABEL[metric]}
       </p>
-      <p className="font-mono text-xs mb-4" style={{ color: '#6b7280' }}>
+      <p className="font-mono text-xs mb-4" style={{ color: 'var(--color-muted)' }}>
         BUY RSI → (columns) · SELL RSI ↓ (rows) · click a cell to backtest it
       </p>
 
@@ -70,7 +75,7 @@ export default function SweepHeatmap({ data, metric, onSelect }) {
           {/* header row */}
           <div />
           {buy_values.map(b => (
-            <div key={`h${b}`} className="font-mono text-xs text-center" style={{ color: '#6b7280' }}>{b}</div>
+            <div key={`h${b}`} className="font-mono text-xs text-center" style={{ color: 'var(--color-muted)' }}>{b}</div>
           ))}
 
           {/* rows */}
@@ -92,16 +97,16 @@ export default function SweepHeatmap({ data, metric, onSelect }) {
 
       {/* detail line */}
       {detail && (
-        <div className="font-mono text-xs mt-4 flex flex-wrap gap-x-6 gap-y-1" style={{ color: '#6b7280' }}>
-          <span style={{ color: '#e2e2e2' }}>
+        <div className="font-mono text-xs mt-4 flex flex-wrap gap-x-6 gap-y-1" style={{ color: 'var(--color-muted)' }}>
+          <span style={{ color: 'var(--color-text)' }}>
             BUY&lt;{detail.buy_rsi} / SELL&gt;{detail.sell_rsi}{detail === best && !hover ? '  (best)' : ''}
           </span>
-          <span>RETURN <span style={{ color: '#e2e2e2' }}>{detail.total_return_pct != null ? `${detail.total_return_pct}%` : '—'}</span></span>
-          <span>CAGR <span style={{ color: '#e2e2e2' }}>{detail.cagr_pct != null ? `${detail.cagr_pct}%` : '—'}</span></span>
+          <span>RETURN <span style={{ color: 'var(--color-text)' }}>{detail.total_return_pct != null ? `${detail.total_return_pct}%` : '—'}</span></span>
+          <span>CAGR <span style={{ color: 'var(--color-text)' }}>{detail.cagr_pct != null ? `${detail.cagr_pct}%` : '—'}</span></span>
           <span>SHARPE <span style={{ color: sharpeBand(detail.sharpe) }}>{detail.sharpe != null ? detail.sharpe.toFixed(2) : '—'}</span></span>
-          <span>WIN <span style={{ color: '#e2e2e2' }}>{detail.win_rate_pct != null ? `${detail.win_rate_pct}%` : '—'}</span></span>
-          <span>DD <span style={{ color: '#ff4d6d' }}>{detail.max_drawdown_pct != null ? `${detail.max_drawdown_pct}%` : '—'}</span></span>
-          <span>TRADES <span style={{ color: '#e2e2e2' }}>{detail.num_trades ?? '—'}</span></span>
+          <span>WIN <span style={{ color: 'var(--color-text)' }}>{detail.win_rate_pct != null ? `${detail.win_rate_pct}%` : '—'}</span></span>
+          <span>DD <span style={{ color: 'var(--color-neg)' }}>{detail.max_drawdown_pct != null ? `${detail.max_drawdown_pct}%` : '—'}</span></span>
+          <span>TRADES <span style={{ color: 'var(--color-text)' }}>{detail.num_trades ?? '—'}</span></span>
         </div>
       )}
     </div>
@@ -111,7 +116,7 @@ export default function SweepHeatmap({ data, metric, onSelect }) {
 function FragmentRow({ s, buy_values, cellAt, metric, bg, best, onSelect, setHover }) {
   return (
     <>
-      <div className="font-mono text-xs flex items-center justify-end pr-1" style={{ color: '#6b7280' }}>{s}</div>
+      <div className="font-mono text-xs flex items-center justify-end pr-1" style={{ color: 'var(--color-muted)' }}>{s}</div>
       {buy_values.map(b => {
         const cell = cellAt(b, s);
         const v = cell ? cell[metric] : null;
@@ -122,11 +127,11 @@ function FragmentRow({ s, buy_values, cellAt, metric, bg, best, onSelect, setHov
             onClick={() => v != null && onSelect(b, s)}
             onMouseEnter={() => setHover(cell)}
             onMouseLeave={() => setHover(null)}
-            className="font-mono text-xs rounded text-center py-2"
+            className="font-mono text-xs text-center py-2"
             style={{
               backgroundColor: bg(v),
-              color: v == null ? '#6b7280' : '#e2e2e2',
-              border: isBest ? '2px solid #e2e2e2' : '1px solid #1e1e2e',
+              color: v == null ? 'var(--color-muted)' : 'var(--color-text)',
+              border: isBest ? '2px solid var(--color-text)' : '1px solid var(--color-divider)',
               cursor: v == null ? 'default' : 'pointer',
             }}
           >

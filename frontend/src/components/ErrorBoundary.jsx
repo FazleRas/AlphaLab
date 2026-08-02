@@ -15,13 +15,13 @@ export default class ErrorBoundary extends Component {
     if (this.state.error) {
       return (
         <div className="max-w-4xl mx-auto">
-          <p className="font-mono text-sm mb-3" style={{ color: '#ff4d6d' }}>
+          <p className="font-mono text-sm mb-3" style={{ color: 'var(--color-neg)' }}>
             Something went wrong rendering this view: {String(this.state.error?.message || this.state.error)}
           </p>
           <button
             onClick={() => this.setState({ error: null })}
-            className="font-mono text-xs px-3 py-1 rounded"
-            style={{ backgroundColor: '#1e1e2e', color: '#e2e2e2', border: '1px solid #2563eb' }}
+            className="font-mono text-xs px-3 py-1"
+            style={{ backgroundColor: 'var(--color-divider)', color: 'var(--color-text)', border: '1px solid var(--color-accent)' }}
           >
             TRY AGAIN
           </button>
