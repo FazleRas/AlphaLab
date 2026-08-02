@@ -120,7 +120,9 @@ export default function Dashboard() {
       {quote && (
         <>
           {/* Price Header */}
-          <div className="p-5 mb-4" style={{ border: '1px solid var(--color-divider)' }}>
+          {/* The quote card's border carries the day's direction, so the whole
+              block reads up or down before you parse the numbers. */}
+          <div className="p-5 mb-4" style={{ border: `1px solid ${isUp ? 'var(--color-pos)' : 'var(--color-neg)'}` }}>
             <div className="flex items-start justify-between">
               <div>
                 <p className="font-mono text-xs tracking-widest mb-1" style={{ color: 'var(--color-muted)' }}>{quote.ticker}</p>

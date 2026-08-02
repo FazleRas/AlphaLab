@@ -30,8 +30,11 @@
   --color-text: #1d1f20;
   --color-accent: #1d4ed8;
   --color-accent-hi: #1e40af;
-  --color-divider: rgba(29, 31, 32, 0.2);
-  --color-hairline: rgba(29, 31, 32, 0.1);
+  /* Borders are black on the paper ground rather than grey. The inner rule
+     keeps some transparency so a card's own outline still reads as the
+     stronger line of the two. */
+  --color-divider: #000000;
+  --color-hairline: rgba(0, 0, 0, 0.4);
   --color-muted: #71767c;
   /* Same Robinhood hues, darkened to stay legible on the paper ground. */
   --color-pos: #00840b;
