@@ -14,9 +14,10 @@
   --color-divider: rgba(230, 232, 234, 0.14);
   --color-hairline: rgba(230, 232, 234, 0.08);
   --color-muted: #6f767d;
-  /* Robinhood's up/down pair. */
-  --color-pos: #00c805;
-  --color-neg: #ff5000;
+  /* TradingView's up/down hues, pushed to a higher saturation so they carry
+     on true black the way Robinhood's do. */
+  --color-pos: #00c9a0;
+  --color-neg: #ff2f45;
   /* Chart overlay series. Two steps of gray so comparison lines (moving
      averages, benchmarks) stay separable from each other without competing
      with the accent-colored subject of the chart. */
@@ -36,9 +37,9 @@
   --color-divider: #000000;
   --color-hairline: rgba(0, 0, 0, 0.4);
   --color-muted: #71767c;
-  /* Same Robinhood hues, darkened to stay legible on the paper ground. */
-  --color-pos: #00840b;
-  --color-neg: #c73e00;
+  /* Same hues, darkened to stay legible on the paper ground. */
+  --color-pos: #008f72;
+  --color-neg: #d61f33;
   /* Inverted for the paper ground: darker grays read on light. */
   --color-series-1: #565c63;
   --color-series-2: #949ba3;

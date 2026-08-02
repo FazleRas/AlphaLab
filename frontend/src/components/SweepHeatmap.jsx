@@ -11,13 +11,13 @@ const sharpeBand = (s) => {
 };
 
 const lerp = (a, b, t) => Math.round(a + (b - a) * t);
-// Robinhood red #ff5000 (loss) → near-black (break-even) → Robinhood green
-// #00c805 (gain). These are literal rather than tokens because the ramp has to
-// interpolate between the endpoints, which CSS variables can't do here; they
-// track --color-neg and --color-pos by hand.
-const HEAT_LOSS = [255, 80, 0];
+// Loss #ff2f45 → near-black (break-even) → gain #00c9a0. These are literal
+// rather than tokens because the ramp has to interpolate between the
+// endpoints, which CSS variables can't do here; they track --color-neg and
+// --color-pos by hand.
+const HEAT_LOSS = [255, 47, 69];
 const HEAT_MID = [18, 18, 18];
-const HEAT_GAIN = [0, 200, 5];
+const HEAT_GAIN = [0, 201, 160];
 
 const heatColor = (t) => {
   const [from, to, u] = t <= 0.5
