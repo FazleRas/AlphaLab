@@ -6,6 +6,7 @@ import Backtest from './components/Backtest';
 import Watchlist from './components/Watchlist';
 import Auth from './components/Auth';
 import ErrorBoundary from './components/ErrorBoundary';
+import Logo from './components/Logo';
 import useAuth from './hooks/useAuth';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
@@ -122,8 +123,16 @@ function App() {
           padding: '20px 20px 0',
         }}
       >
-        <span style={{ fontSize: '13px', letterSpacing: '0.3em', color: 'var(--color-text)' }}>
-          ALPHALAB
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '10px',
+            color: 'var(--color-text)',
+          }}
+        >
+          <Logo size={20} />
+          <span style={{ fontSize: '13px', letterSpacing: '0.3em' }}>ALPHALAB</span>
         </span>
         <span style={{ ...labelStyle, marginRight: 'auto' }}>{APP_VERSION.toUpperCase()}</span>
         <AuthStatus user={user} />
