@@ -19,7 +19,7 @@ A full-stack trading analytics platform with real-time market data, technical in
 - **Equity curve** with underwater drawdown shading, plus **buy & hold and SPY benchmark overlays** so you can see the strategy's margin over just holding the stock or the market
 - **Risk & performance metrics** — total return (compounded), annualized return (CAGR), annualized Sharpe ratio, max drawdown, win rate
 - Trade history with per-trade dollar P&L and running account balance
-- **Parameter sweep** — backtest a grid of RSI thresholds in one request and view the results as a color-coded heatmap; click any cell to drill into its full backtest
+- **Parameter sweep** — backtest a grid of RSI thresholds and view the results as a color-coded heatmap that **fills in live** as each cell finishes; click any cell to drill into its full backtest. Sweeps run as background jobs on the backend, so a refresh reattaches to the running sweep, a shared link opens straight to its progress, and a sweep can be cancelled mid-grid
 - **Out-of-sample validation** — optimize on the first ~70% of history, then re-test the winners blind on the held-out ~30% with an honest HELD UP / LAGGED / DEGRADED verdict per combo
 - **Shareable backtest URLs** — every run is encoded in the query string, so a link opens straight to that backtest or sweep
 - **CSV export** of the full trade history
@@ -46,6 +46,7 @@ It's also an overfitting check, in two layers. First, the heatmap itself: a *reg
 - `GET /scan?tickers=AAPL,NVDA,TSLA&bullish_trend=true` — multi-ticker scanner, filters by active signals
 - `GET /backtest/{ticker}?strategy=rsi&period=2y&buy_rsi=30&sell_rsi=70` — backtest a strategy; returns metrics, equity curve, buy & hold and SPY benchmark curves, and full trade history
 - `GET /sweep/{ticker}?strategy=rsi&period=2y` — run a `buy_rsi` × `sell_rsi` grid in one request, returning per-cell metrics and the best combination (rsi / combined strategies)
+- `POST /sweeps/{ticker}?strategy=rsi&period=2y` — start the same grid as a background job and return a `sweep_id`; `GET /sweeps/{sweep_id}` reports `completed`/`total`, the cells finished so far, and the running best; `DELETE /sweeps/{sweep_id}` cancels between cells. State lives in Redis when `REDIS_URL` is set (survives restarts, visible across workers) and in memory otherwise
 - `GET /validate/{ticker}?strategy=rsi&period=2y&split=0.7&top_n=3` — out-of-sample validation: sweep the train window, re-run the top combos on the held-out test window, and return train vs. test metrics per combo
 
 **Protected** (require an `Authorization: Bearer <supabase-jwt>` header; each request is scoped to the signed-in user):
@@ -252,8 +253,11 @@ Two honest limitations:
    the box and editing a file; there is no audit trail and no versioning. At any
    real scale this is AWS Secrets Manager or SSM Parameter Store, injected as a
    task/instance role rather than a file on disk.
-2. **The image build does not currently exclude `.env`.** See Known Gaps — the
-   `--env-file` injection is sound, but the Dockerfile's build context is not.
+2. **The image build used to copy `.env` into a layer.** `.gitignore` does
+   not apply to Docker build contexts, so `COPY . .` shipped the local
+   virtualenv and any `backend/.env` on the build host. A
+   [`backend/.dockerignore`](backend/.dockerignore) now excludes both; images
+   built before it landed should be treated as sensitive.
 
 ### Runbook
 
@@ -337,21 +341,17 @@ one that names them:
   Render host, and no production environment variable points at EC2. The EC2
   path is exercised directly (the API answers over HTTPS at its own hostname);
   wiring the *frontend* to it is a preview-scope change, documented below.
-- **The Docker build context is not filtered.** There is no `.dockerignore`, so
-  `COPY . .` copies the entire `backend/` directory into the image — including
-  the local `.venv/` (~150 MB of a ~151 MB context) and, critically,
-  **`backend/.env` if it is present on the build host, which it is on EC2**.
-  `.gitignore` does not apply to Docker build contexts. The running container
-  gets its secrets correctly via `--env-file`, but the image built on the box
-  also contains a copy of them in a layer. A two-line `.dockerignore`
-  (`.venv/`, `.env`) fixes both the bloat and the leak; until it lands, the
-  image must be treated as sensitive and never pushed to a registry.
-- **CORS is `allow_origins=["*"]`.** Tolerable here rather than correct: auth is
-  a Supabase JWT in the `Authorization` header rather than a cookie, and
-  `allow_credentials=False`, so a browser will not attach ambient credentials
-  and the wildcard widens no CSRF surface. It should still be narrowed to the
-  known Vercel origins — the wildcard is a default nobody chose, and defaults
-  that happen to be safe stop being safe when the auth model changes.
+- **Images built before `backend/.dockerignore` contain `.env`.** The build
+  context used to include the local `.venv/` and, on EC2, `backend/.env`; any
+  image from before the ignore file landed carries a copy of the secrets in a
+  layer and must not be pushed to a registry. Rebuild on the box after pulling.
+- **CORS is an allowlist, but the Vercel preview rule is a pattern.**
+  `ALLOWED_ORIGINS` names the production frontend and localhost;
+  `ALLOWED_ORIGIN_REGEX` admits `alphalab-*.vercel.app` so preview deployments
+  work without a config change per branch. Vercel project subdomains are
+  global, so that pattern is wider than this project's own previews. It is
+  still no CSRF surface (bearer auth, `allow_credentials=False`), and both
+  values are overridable per environment.
 - **RLS is bypassed on the backend path.** The pooler connects as the `postgres`
   role, so Row-Level Security does not constrain it; per-user scoping is
   enforced in application code via the `get_current_user_id` dependency
@@ -402,14 +402,20 @@ Screenshots — capture into docs/ and uncomment:
 
 ## Status
 
-**v1.1.1** — v1.0.0 (tagged) shipped the feature-complete platform: real-time
+**v1.3.0** — v1.0.0 (tagged) shipped the feature-complete platform: real-time
 data, indicators, charts, the scanner, the multi-strategy backtester with
 parameter sweep and out-of-sample validation, and per-user auth with a saved
 watchlist and saved backtest runs, all wired through FastAPI + Supabase and
-deployed. v1.1.0 added the optional Redis market-data cache. v1.1.1 hardens
+deployed. v1.1.0 added the optional Redis market-data cache. v1.1.1 hardened
 the market-data layer after a production incident: `/quote` now falls back to
 Yahoo's chart API when the rate-limit-prone quoteSummary API fails, NaN rows
 from the current (incomplete) trading day can no longer 500 `/history` or get
 pinned in the cache, and backend errors reach the browser as JSON with CORS
 headers so the UI reports the real failure instead of guessing the backend is
-down.
+down. v1.2.0 was the dark-mode redesign: theme tokens, light and dark themes,
+and the chart palette. v1.3.0 makes parameter sweeps background jobs — the
+heatmap fills in cell by cell, survives a refresh, and can be cancelled — and
+closes two of the gaps named above: the Docker build context now excludes
+`.venv` and `.env`, and CORS is an allowlist instead of `*`. It also fixes the
+quote's day change, which was measured from the open rather than the previous
+close and so ignored the overnight gap.
