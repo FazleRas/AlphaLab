@@ -19,7 +19,7 @@ def _fetch_price(ticker: str):
     # cache_json won't cache it, so the gap isn't pinned for the TTL.
     if data.empty:
         return None
-    return float(data["Close"].iloc[-1])
+    return _round2(data["Close"].iloc[-1])
 
 def get_price(ticker: str):
     return cache_json(f"price:{ticker.upper()}", QUOTE_TTL, lambda: _fetch_price(ticker))
@@ -63,14 +63,19 @@ def get_history(ticker: str, period: str = "1mo"):
         lambda: _fetch_history(ticker, period),
     )
 
-def _fast_attr(fast_info, name):
+def _fast_attr(fast_info, name, decimals=2):
     # fast_info attributes can individually raise or come back NaN; a missing
-    # field should degrade to None, not take down the whole quote.
+    # field should degrade to None, not take down the whole quote. Values
+    # arrive as float32-precision numbers (326.57 reads 326.57000732421875),
+    # so they are rounded here — the .info path gets Yahoo's already-rounded
+    # figures, and the two paths must not render differently.
     try:
         value = getattr(fast_info, name)
     except Exception:
         return None
-    return None if isinstance(value, float) and value != value else value
+    if value is None or (isinstance(value, float) and value != value):
+        return None
+    return int(round(value)) if decimals == 0 else round(float(value), decimals)
 
 def _fallback_quote(stock, ticker: str):
     fi = stock.fast_info
@@ -94,8 +99,8 @@ def _fallback_quote(stock, ticker: str):
         "change_pct": change_pct,
         "day_high": _fast_attr(fi, "day_high"),
         "day_low": _fast_attr(fi, "day_low"),
-        "volume": _fast_attr(fi, "last_volume"),
-        "market_cap": _fast_attr(fi, "market_cap"),
+        "volume": _fast_attr(fi, "last_volume", decimals=0),
+        "market_cap": _fast_attr(fi, "market_cap", decimals=0),
         "pe_ratio": None,
     }
 
