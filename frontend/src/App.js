@@ -7,6 +7,7 @@ import Watchlist from './components/Watchlist';
 import Auth from './components/Auth';
 import ErrorBoundary from './components/ErrorBoundary';
 import Logo from './components/Logo';
+import Tape from './components/Tape';
 import useAuth from './hooks/useAuth';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
@@ -171,6 +172,10 @@ function App() {
           </button>
         ))}
       </nav>
+
+      <div style={{ maxWidth: PAGE_WIDTH, margin: '0 auto', padding: '0 20px' }}>
+        <Tape />
+      </div>
 
       <main style={{ maxWidth: PAGE_WIDTH, margin: '0 auto', padding: '28px 20px 80px' }}>
         {/* key resets the boundary when switching tabs, so a crash in one
