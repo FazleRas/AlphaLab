@@ -10,6 +10,12 @@ const StatCard = ({ label, value, color }) => (
   </div>
 );
 
+// Format at the edge regardless of what the API sends: a quote served from
+// yfinance's fast_info fallback once reached the screen as
+// $326.57000732421875. The backend rounds now too; this is the backstop.
+const fixed2 = (v) => (v == null ? '-' : Number(v).toFixed(2));
+const money = (v) => (v == null ? '-' : `$${fixed2(v)}`);
+
 const rsiColor = (rsi) => {
   if (!rsi) return 'var(--color-text)';
   if (rsi > 70) return 'var(--color-neg)';
@@ -126,14 +132,14 @@ export default function Dashboard() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="font-mono text-xs tracking-widest mb-1" style={{ color: 'var(--color-muted)' }}>{quote.ticker}</p>
-                <p className="font-mono text-4xl" style={{ color: 'var(--color-text)' }}>${quote.price}</p>
+                <p className="font-mono text-4xl" style={{ color: 'var(--color-text)' }}>{money(quote.price)}</p>
               </div>
               <div className="text-right">
                 <p className="font-mono text-2xl" style={{ color: isUp ? 'var(--color-pos)' : 'var(--color-neg)' }}>
-                  {isUp ? '+' : ''}{quote.change}
+                  {isUp ? '+' : ''}{fixed2(quote.change)}
                 </p>
                 <p className="font-mono text-sm" style={{ color: isUp ? 'var(--color-pos)' : 'var(--color-neg)' }}>
-                  {isUp ? '+' : ''}{quote.change_pct}%
+                  {isUp ? '+' : ''}{fixed2(quote.change_pct)}%
                 </p>
               </div>
             </div>
@@ -141,9 +147,9 @@ export default function Dashboard() {
 
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
-            <StatCard label="OPEN" value={`$${quote.open}`} />
-            <StatCard label="DAY HIGH" value={`$${quote.day_high}`} />
-            <StatCard label="DAY LOW" value={`$${quote.day_low}`} />
+            <StatCard label="OPEN" value={money(quote.open)} />
+            <StatCard label="DAY HIGH" value={money(quote.day_high)} />
+            <StatCard label="DAY LOW" value={money(quote.day_low)} />
             <StatCard label="P/E RATIO" value={quote.pe_ratio?.toFixed(2)} />
           </div>
 
