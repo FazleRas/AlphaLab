@@ -166,6 +166,13 @@ export default function Backtest({ user }) {
     let started;
     try {
       const res = await fetch(`${API}/sweeps/${tk}?period=${per}&strategy=${strat}`, { method: 'POST' });
+      if (res.status === 404 || res.status === 405) {
+        // The backend predates async sweeps (a deploy that rolled back, or
+        // an older self-hosted build). Run the synchronous endpoint instead:
+        // same grid, no progress, nothing to resume or cancel.
+        await runSweepSync(tk, per, strat);
+        return;
+      }
       started = await res.json();
     } catch (e) {
       setError('Failed to run sweep. Is your backend running?');
@@ -184,6 +191,24 @@ export default function Backtest({ user }) {
     if ((await pollSweep(started.sweep_id)) === 'expired') {
       setError('That sweep has expired. Run it again.');
     }
+  };
+
+  const runSweepSync = async (tk, per, strat) => {
+    try {
+      const res = await fetch(`${API}/sweep/${tk}?period=${per}&strategy=${strat}`);
+      const data = await res.json();
+      if (data.error) {
+        setError(data.error);
+        setSweepData(null);
+      } else {
+        setSweepData(data);
+        setSweepProgress(null);
+        syncUrl({ ticker: tk, period: per, strategy: strat, mode: 'sweep' });
+      }
+    } catch (e) {
+      setError('Failed to run sweep. Is your backend running?');
+    }
+    setLoading(false);
   };
 
   // A refreshed or shared URL carries the sweep id: reattach to the running

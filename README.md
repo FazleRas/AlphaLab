@@ -126,7 +126,12 @@ Auth and sends the JWT to FastAPI; the backend verifies it and talks to Postgres
 
 Both apps still run without these — the watchlist tab shows a "not configured"
 note and the DB-backed routes return `503`, while every other feature is
-unaffected.
+unaffected. The same holds if `DATABASE_URL` is set but the database is
+unreachable at startup: the backend logs the error and boots without a pool
+rather than exiting. That case is not hypothetical — Supabase pauses free
+projects after a week idle, and the pooler then answers
+`tenant/user postgres.<ref> not found`. Restore the project from the Supabase
+dashboard and restart the backend.
 
 ## Redis Cache (optional)
 
