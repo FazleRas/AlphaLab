@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LineChart, BarChart, Line, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceDot, ReferenceArea } from 'recharts';
+import {
+  ComposedChart, LineChart, BarChart, Line, Bar, Cell, XAxis, YAxis, Tooltip,
+  ResponsiveContainer, Legend, ReferenceDot, ReferenceArea, ReferenceLine,
+} from 'recharts';
 import API from '../config';
 import { ChartSkeleton } from './Skeleton';
 import {
@@ -20,87 +23,213 @@ const LINES = [
   { key: 'sma_50', label: 'SMA50', color: SERIES.overlay2, width: 1, dash: '2 3' },
 ];
 
+const PERIODS = ['1mo', '3mo', '6mo', '1y', '5y', 'max'];
+const PANES = [
+  { key: 'vol', label: 'VOL' },
+  { key: 'rsi', label: 'RSI' },
+  { key: 'macd', label: 'MACD' },
+];
+const PREFS_KEY = 'alphalab:chart';
+const SYNC = 'price';
+const Y_WIDTH = 60;
+const PANE_MARGIN = { top: 2, right: 5, bottom: 0, left: 0 };
+const AXIS_TICK = { fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' };
 const LABEL_STYLE = { fontSize: '10.5px', letterSpacing: '0.16em', color: 'var(--color-muted)' };
+const ANIM = { isAnimationActive: true, animationDuration: 800, animationEasing: 'ease-out' };
 
-// Recharts clones this with active/payload/label, so `first` and `formatDate`
-// stay as passed.
-const PriceTooltip = ({ active, payload, label, first, formatDate }) => {
+const fix = (v, d = 2) => (v == null ? '—' : Number(v).toFixed(d));
+const compact = (v) => {
+  if (v == null) return '—';
+  const a = Math.abs(v);
+  if (a >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  if (a >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
+  return String(v);
+};
+const rsiColor = (v) => (v == null ? 'var(--color-muted)' : v > 70 ? 'var(--color-neg)' : v < 30 ? 'var(--color-pos)' : 'var(--color-text)');
+const upDay = (row) => row.close >= (row.open ?? row.close);
+const dirColor = (row) => (upDay(row) ? 'var(--color-pos)' : 'var(--color-neg)');
+
+const readPrefs = () => {
+  try {
+    const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+    return {
+      chartType: p.chartType === 'candles' ? 'candles' : 'line',
+      panes: { vol: true, rsi: true, macd: false, ...(p.panes || {}) },
+    };
+  } catch (e) {
+    return { chartType: 'line', panes: { vol: true, rsi: true, macd: false } };
+  }
+};
+
+// Indicators carry close/SMA/RSI/MACD per day; history carries OHLCV. Join
+// them by date so one row feeds every pane. `range` is what the candle bar
+// spans; a row without OHLC (history failed) gets no candle.
+const merge = (indicators, history) => {
+  const byDate = new Map((history || []).map(h => [h.date, h]));
+  return (indicators || []).map(row => {
+    const h = byDate.get(row.date);
+    return h
+      ? { ...row, open: h.open, high: h.high, low: h.low, volume: h.volume, range: [h.low, h.high] }
+      : { ...row, range: null };
+  });
+};
+
+// Recharts hands the range bar's box (low..high) and the row; the body is
+// open..close inside it, the wick is the full box.
+const Candle = ({ x, y, width, height, payload }) => {
+  if (!payload || payload.open == null || payload.high == null || payload.low == null || !height) return null;
+  const { open, close, high, low } = payload;
+  const px = height / ((high - low) || 1);
+  const top = y + (high - Math.max(open, close)) * px;
+  const bodyH = Math.max(1, Math.abs(open - close) * px);
+  const color = dirColor(payload);
+  const cx = x + width / 2;
+  const w = Math.max(1, Math.min(width * 0.7, 9));
+  return (
+    <g>
+      <line x1={cx} x2={cx} y1={y} y2={y + height} stroke={color} strokeWidth={1} />
+      <rect x={cx - w / 2} y={top} width={w} height={bodyH} fill={color} />
+    </g>
+  );
+};
+
+const Row = ({ label, color = 'transparent', children }) => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18 }}>
+    <span style={{ display: 'flex', alignItems: 'center' }}>
+      <Swatch color={color} />
+      <span style={LABEL_STYLE}>{label}</span>
+    </span>
+    <span>{children}</span>
+  </div>
+);
+
+const Muted = ({ children }) => <span style={{ color: 'var(--color-muted)' }}>{children}</span>;
+
+// One tooltip for every pane: the panes render only a cursor line and lean on
+// this, which reads the whole merged row.
+const PriceTooltip = ({ active, payload, label, first, formatDate, chartType, panes, hidden }) => {
   if (!active || !payload || !payload.length) return null;
+  const row = payload[0].payload;
+  const pct = first ? ((row.close - first) / first) * 100 : null;
+  const pctText = pct == null ? null : `(${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`;
+  const anyPane = panes.vol || panes.rsi || panes.macd;
   return (
     <div style={tooltipBoxStyle}>
       <p style={{ ...LABEL_STYLE, margin: '0 0 6px' }}>{formatDate(label)}</p>
-      {payload.map(entry => {
-        const meta = LINES.find(l => l.key === entry.dataKey);
-        const pct = entry.dataKey === 'close' && first
-          ? ((entry.value - first) / first) * 100
-          : null;
-        return (
-          <div
-            key={entry.dataKey}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 18 }}
-          >
-            <span style={{ display: 'flex', alignItems: 'center' }}>
-              <Swatch color={meta ? meta.color : entry.color} />
-              <span style={LABEL_STYLE}>{meta ? meta.label : entry.name}</span>
-            </span>
-            <span>
-              ${entry.value}
-              {pct != null && (
-                <span style={{ color: 'var(--color-muted)' }}>
-                  {' '}({pct >= 0 ? '+' : ''}{pct.toFixed(2)}%)
-                </span>
-              )}
-            </span>
-          </div>
-        );
-      })}
+      {chartType === 'candles' && row.open != null ? (
+        <>
+          <Row label="OPEN">${fix(row.open)}</Row>
+          <Row label="HIGH">${fix(row.high)}</Row>
+          <Row label="LOW">${fix(row.low)}</Row>
+          <Row label="CLOSE" color={dirColor(row)}>${fix(row.close)} <Muted>{pctText}</Muted></Row>
+        </>
+      ) : (
+        !hidden.close && (
+          <Row label="CLOSE" color={SERIES.primary}>${fix(row.close)} <Muted>{pctText}</Muted></Row>
+        )
+      )}
+      {!hidden.sma_20 && row.sma_20 != null && <Row label="SMA20" color={SERIES.overlay1}>${fix(row.sma_20)}</Row>}
+      {!hidden.sma_50 && row.sma_50 != null && <Row label="SMA50" color={SERIES.overlay2}>${fix(row.sma_50)}</Row>}
+      {anyPane && <div style={{ borderTop: '1px solid var(--color-hairline)', margin: '6px 0' }} />}
+      {panes.vol && row.volume != null && <Row label="VOL">{compact(row.volume)}</Row>}
+      {panes.rsi && row.rsi != null && <Row label="RSI"><span style={{ color: rsiColor(row.rsi) }}>{fix(row.rsi)}</span></Row>}
+      {panes.macd && row.macd != null && (
+        <Row label="MACD">{fix(row.macd, 3)} <Muted>SIG {fix(row.macd_signal, 3)}</Muted></Row>
+      )}
     </div>
   );
 };
 
+// Header readout for the row under the cursor (or the latest row), the way a
+// terminal prints O/H/L/C above the chart.
+const Readout = ({ row, chartType }) => {
+  if (!row) return null;
+  const V = ({ k, v, color }) => (
+    <span style={{ marginRight: 14, whiteSpace: 'nowrap' }}>
+      <span style={{ color: 'var(--color-muted)' }}>{k} </span>
+      <span style={{ color: color || 'var(--color-text)' }}>{v}</span>
+    </span>
+  );
+  if (chartType === 'candles' && row.open != null) {
+    const c = dirColor(row);
+    return (
+      <span className="font-mono text-xs">
+        <V k="O" v={fix(row.open)} /><V k="H" v={fix(row.high)} /><V k="L" v={fix(row.low)} /><V k="C" v={fix(row.close)} color={c} />
+        {row.volume != null && <V k="V" v={compact(row.volume)} />}
+      </span>
+    );
+  }
+  return (
+    <span className="font-mono text-xs">
+      <V k="C" v={fix(row.close)} />
+      {row.sma_20 != null && <V k="SMA20" v={fix(row.sma_20)} />}
+      {row.sma_50 != null && <V k="SMA50" v={fix(row.sma_50)} />}
+      {row.rsi != null && <V k="RSI" v={fix(row.rsi)} color={rsiColor(row.rsi)} />}
+    </span>
+  );
+};
+
+const PaneLabel = ({ children }) => (
+  <p className="font-mono text-xs tracking-widest mt-3 mb-1" style={{ color: 'var(--color-muted)' }}>{children}</p>
+);
+
 export default function PriceChart({ ticker }) {
-    const [data, setData] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const [period, setPeriod] = useState('3mo');
-    const [chartType, setChartType] = useState('line');
-    const [measure, setMeasure] = useState({ a: null, b: null });
-    // Series hidden via the legend. Click an entry to drop it and click again
-    // to bring it back.
-    const [hidden, setHidden] = useState({});
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [period, setPeriod] = useState('3mo');
+  const [prefs, setPrefs] = useState(readPrefs);
+  const [measure, setMeasure] = useState({ a: null, b: null });
+  const [cursor, setCursor] = useState(null);
+  // Series hidden via the legend. Click an entry to drop it and click again
+  // to bring it back.
+  const [hidden, setHidden] = useState({});
+
+  const { chartType, panes } = prefs;
+  const updatePrefs = (patch) => {
+    setPrefs(prev => {
+      const next = { ...prev, ...patch };
+      try { localStorage.setItem(PREFS_KEY, JSON.stringify(next)); } catch (e) { /* session only */ }
+      return next;
+    });
+  };
+  const togglePane = (key) => updatePrefs({ panes: { ...panes, [key]: !panes[key] } });
 
   const toggleSeries = (entry, _index, event) => {
     // Recharts renders the legend inside the chart wrapper, so a legend click
-    // also reaches LineChart's onClick and would drop a measurement mark.
+    // also reaches the chart's onClick and would drop a measurement mark.
     event?.stopPropagation?.();
     const key = legendDataKey(entry);
     if (!key) return;
     setHidden(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const formatDate = useMemo(
-    () => makeDateFormatter(data.map(d => d.date)),
-    [data]
-  );
+  const formatDate = useMemo(() => makeDateFormatter(data.map(d => d.date)), [data]);
 
   const renderLegendLabel = (value, entry) => {
     const key = legendDataKey(entry);
     return <span style={legendLabelStyle(!!hidden[key])}>{value}</span>;
   };
 
-  // Click two points on the chart to measure the move between them. Recharts v3
-  // gives us activeLabel (the date) on click, not the data point, so we look the
-  // close up from the loaded series.
+  // Recharts v3 gives activeLabel (the date) and an index on chart events,
+  // not the row, so it is looked up from the loaded series.
+  const rowAt = (e) => {
+    if (!e || e.activeLabel == null) return null;
+    const idx = e.activeIndex ?? e.activeTooltipIndex;
+    return (idx != null && data[idx]) || data.find(d => d.date === e.activeLabel) || null;
+  };
+  const handleMove = (e) => setCursor(rowAt(e));
+
+  // Click two points on the chart to measure the move between them.
   const handleChartClick = (e, event) => {
     // Belt and braces with the legend's own stopPropagation: whichever way the
     // click arrives, one that started in the legend is a series toggle, not a
     // measurement pick.
     if (event?.target?.closest?.('.recharts-legend-wrapper')) return;
-    if (!e || e.activeLabel == null) return;
-    const idx = e.activeIndex ?? e.activeTooltipIndex;
-    const row = (idx != null && data[idx]) || data.find(d => d.date === e.activeLabel);
+    const row = rowAt(e);
     if (!row) return;
-    const point = { date: e.activeLabel, close: row.close };
+    const point = { date: row.date, close: row.close };
     setMeasure(prev => (!prev.a || prev.b ? { a: point, b: null } : { ...prev, b: point }));
   };
 
@@ -121,82 +250,108 @@ export default function PriceChart({ ticker }) {
   } : null;
 
   useEffect(() => {
-    if (!ticker) return;
+    if (!ticker) return undefined;
+    let live = true;
     setLoading(true);
     setError(null);
     setMeasure({ a: null, b: null });
-    fetch(`${API}/indicators/${ticker}?period=${period}`)
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json();
-      })
-      .then(d => {
-        setData(d.indicators || []);
+    setCursor(null);
+    const get = (path) => fetch(`${API}${path}`).then(r => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.json();
+    });
+    // OHLCV is optional: if history fails the line chart still works and the
+    // candle toggle is disabled.
+    Promise.all([
+      get(`/indicators/${ticker}?period=${period}`),
+      get(`/history/${ticker}?period=${period}`).catch(() => null),
+    ])
+      .then(([ind, hist]) => {
+        if (!live) return;
+        setData(merge(ind.indicators, hist && hist.prices));
         setLoading(false);
       })
       .catch(() => {
+        if (!live) return;
         setData([]);
         setError('Failed to load chart data.');
         setLoading(false);
       });
+    return () => { live = false; };
   }, [ticker, period]);
-
-  const periods = ['1mo', '3mo', '6mo', '1y', '5y', 'max'];
 
   if (!ticker) return null;
 
-return (
-  <div className="p-4 mt-4" style={{ border: '1px solid var(--color-divider)' }}>
-    <div className="flex items-center justify-between mb-4">
-      <p className="font-mono text-xs tracking-widest" style={{ color: 'var(--color-muted)' }}>{ticker} CHART</p>
-      <div className="flex items-center gap-2">
-        {periods.map(p => (
-          <button
-            key={p}
-            onClick={() => setPeriod(p)}
-            className={`chip${period === p ? ' chip--on' : ''}`}
-          >
-            {p.toUpperCase()}
-          </button>
-        ))}
-        <div className="flex gap-2 ml-2" style={{ borderLeft: '1px solid var(--color-divider)', paddingLeft: '8px' }}>
-          {['line', 'bar'].map(type => (
-            <button
-              key={type}
-              onClick={() => setChartType(type)}
-              className={`chip${chartType === type ? ' chip--on' : ''}`}
-            >
-              {type.toUpperCase()}
+  const hasOhlc = data.some(r => r.open != null);
+  const showCandles = chartType === 'candles' && hasOhlc;
+  const readoutRow = cursor || data[data.length - 1] || null;
+  const first = data[0]?.close;
+  // Candles need the axis to hug the price range; a bar's default domain
+  // would drag it down to zero.
+  const priceDomain = showCandles ? [(min) => min * 0.995, (max) => max * 1.005] : ['auto', 'auto'];
+
+  return (
+    <div className="p-4 mt-4" style={{ border: '1px solid var(--color-divider)' }}>
+      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+        <p className="font-mono text-xs tracking-widest" style={{ color: 'var(--color-muted)' }}>{ticker} CHART</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          {PERIODS.map(p => (
+            <button key={p} onClick={() => setPeriod(p)} className={`chip${period === p ? ' chip--on' : ''}`}>
+              {p.toUpperCase()}
             </button>
           ))}
+          <div className="flex gap-2 ml-2" style={{ borderLeft: '1px solid var(--color-divider)', paddingLeft: '8px' }}>
+            {[{ key: 'line', label: 'LINE' }, { key: 'candles', label: 'CANDLES' }].map(t => {
+              const disabled = t.key === 'candles' && !loading && !hasOhlc;
+              return (
+                <button
+                  key={t.key}
+                  onClick={() => !disabled && updatePrefs({ chartType: t.key })}
+                  disabled={disabled}
+                  title={disabled ? 'No OHLC data for this range' : undefined}
+                  className={`chip${chartType === t.key ? ' chip--on' : ''}`}
+                  style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
+                >
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+          <div className="flex gap-2 ml-2" style={{ borderLeft: '1px solid var(--color-divider)', paddingLeft: '8px' }}>
+            {PANES.map(p => (
+              <button key={p.key} onClick={() => togglePane(p.key)} className={`chip${panes[p.key] ? ' chip--on' : ''}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
-    </div>
 
-    {!loading && !error && (
-      <div className="flex items-center gap-4 mb-3 font-mono text-xs flex-wrap">
-        {!measure.a ? (
-          <span style={{ color: 'var(--color-muted)' }}>Tip: click two points to measure the move between them.</span>
-        ) : (
-          <>
-            <span style={{ color: 'var(--color-accent)' }}>A {measure.a.date} ${measure.a.close}</span>
-            {measure.b && <span style={{ color: 'var(--color-accent)' }}>B {measure.b.date} ${measure.b.close}</span>}
-            {delta && (
-              <span style={{ color: delta.abs >= 0 ? 'var(--color-pos)' : 'var(--color-neg)' }}>
-                {delta.abs >= 0 ? '+' : ''}{delta.pct.toFixed(2)}% ({delta.abs >= 0 ? '+' : ''}${delta.abs.toFixed(2)}) · {delta.days}d
-              </span>
-            )}
-            <button
-              onClick={() => setMeasure({ a: null, b: null })}
-              className="px-2 py-0.5"
-              style={{ border: '1px solid var(--color-divider)', color: 'var(--color-muted)' }}
-            >
-              CLEAR
-            </button>
-          </>
-        )}
-      </div>
-    )}
+      {!loading && !error && (
+        <div className="flex items-center justify-between gap-4 mb-3 font-mono text-xs flex-wrap">
+          <Readout row={readoutRow} chartType={showCandles ? 'candles' : 'line'} />
+          {!measure.a ? (
+            <span style={{ color: 'var(--color-muted)' }}>Click two points to measure the move between them.</span>
+          ) : (
+            <span className="flex items-center gap-4 flex-wrap">
+              <span style={{ color: 'var(--color-accent)' }}>A {measure.a.date} ${measure.a.close}</span>
+              {measure.b && <span style={{ color: 'var(--color-accent)' }}>B {measure.b.date} ${measure.b.close}</span>}
+              {delta && (
+                <span style={{ color: delta.abs >= 0 ? 'var(--color-pos)' : 'var(--color-neg)' }}>
+                  {delta.abs >= 0 ? '+' : ''}{delta.pct.toFixed(2)}% ({delta.abs >= 0 ? '+' : ''}${delta.abs.toFixed(2)}) · {delta.days}d
+                </span>
+              )}
+              <button
+                onClick={() => setMeasure({ a: null, b: null })}
+                className="px-2 py-0.5"
+                style={{ border: '1px solid var(--color-divider)', color: 'var(--color-muted)' }}
+              >
+                CLEAR
+              </button>
+            </span>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <ChartSkeleton height={300} label={false} bare />
@@ -204,50 +359,97 @@ return (
         <p className="font-mono text-xs" style={{ color: 'var(--color-neg)' }}>{error}</p>
       ) : (
         <>
-        {chartType === 'line' ? (
-        <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 0 }} onClick={handleChartClick} style={{ cursor: 'crosshair' }}>
-            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }} tickLine={false} axisLine={false} domain={['auto', 'auto']} width={60} tickFormatter={v => `$${v}`} />
-            <Tooltip content={<PriceTooltip first={data[0]?.close} formatDate={formatDate} />} />
-            <Legend
-              iconType="square"
-              onClick={toggleSeries}
-              formatter={renderLegendLabel}
-              wrapperStyle={legendWrapperStyle}
-            />
-            {LINES.map(({ key, label, color, width, dash }) => (
-              <Line
-                key={key}
-                type="linear"
-                dataKey={key}
-                name={label}
-                stroke={color}
-                strokeWidth={width}
-                strokeDasharray={dash || undefined}
-                dot={false}
-                legendType="square"
-                hide={!!hidden[key]}
-                isAnimationActive
-                animationDuration={800}
-                animationEasing="ease-out"
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart
+              data={data}
+              syncId={SYNC}
+              margin={{ top: 5, right: 5, bottom: 5, left: 0 }}
+              onClick={handleChartClick}
+              onMouseMove={handleMove}
+              onMouseLeave={() => setCursor(null)}
+              style={{ cursor: 'crosshair' }}
+            >
+              <XAxis dataKey="date" tickFormatter={formatDate} tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={40} />
+              <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} domain={priceDomain} width={Y_WIDTH} tickFormatter={v => `$${Math.round(v)}`} />
+              <Tooltip
+                content={<PriceTooltip first={first} formatDate={formatDate} chartType={showCandles ? 'candles' : 'line'} panes={panes} hidden={hidden} />}
               />
-            ))}
-            {measureRefs()}
-            </LineChart>
-        </ResponsiveContainer>
-        ) : (
-        <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 0 }} onClick={handleChartClick} style={{ cursor: 'crosshair' }}>
-            <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }} tickLine={false} axisLine={false} interval="preserveStartEnd" />
-            <YAxis tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }} tickLine={false} axisLine={false} domain={['auto', 'auto']} width={60} tickFormatter={v => `$${v}`} />
-            <Tooltip content={<PriceTooltip first={data[0]?.close} formatDate={formatDate} />} />
-            <Legend iconType="square" wrapperStyle={legendWrapperStyle} />
-            <Bar dataKey="close" fill={SERIES.primary} name="CLOSE" legendType="square" isAnimationActive animationDuration={800} animationEasing="ease-out" />
-            {measureRefs()}
-            </BarChart>
-        </ResponsiveContainer>
-        )}
+              <Legend iconType="square" onClick={toggleSeries} formatter={renderLegendLabel} wrapperStyle={legendWrapperStyle} />
+              {showCandles && (
+                <Bar dataKey="range" name="OHLC" legendType="none" tooltipType="none" isAnimationActive={false} maxBarSize={10} shape={<Candle />} />
+              )}
+              {LINES.filter(l => !(showCandles && l.key === 'close')).map(({ key, label, color, width, dash }) => (
+                <Line
+                  key={key}
+                  type="linear"
+                  dataKey={key}
+                  name={label}
+                  stroke={color}
+                  strokeWidth={width}
+                  strokeDasharray={dash || undefined}
+                  dot={false}
+                  legendType="square"
+                  hide={!!hidden[key]}
+                  {...ANIM}
+                />
+              ))}
+              {measureRefs()}
+            </ComposedChart>
+          </ResponsiveContainer>
+
+          {/* Panes share the x range and axis width, so they line up under the
+              price chart and follow its crosshair via syncId. Each renders only
+              a cursor; the values ride in the main tooltip. */}
+          {panes.vol && hasOhlc && (
+            <>
+              <PaneLabel>VOLUME</PaneLabel>
+              <ResponsiveContainer width="100%" height={70}>
+                <BarChart data={data} syncId={SYNC} margin={PANE_MARGIN} onMouseMove={handleMove} onMouseLeave={() => setCursor(null)}>
+                  <XAxis dataKey="date" hide />
+                  <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={Y_WIDTH} tickFormatter={compact} tickCount={3} />
+                  <Tooltip content={() => null} cursor={{ fill: 'var(--color-hairline)' }} />
+                  <Bar dataKey="volume" isAnimationActive={false} maxBarSize={10}>
+                    {data.map(row => <Cell key={row.date} fill={dirColor(row)} fillOpacity={0.55} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </>
+          )}
+          {panes.rsi && (
+            <>
+              <PaneLabel>RSI 14</PaneLabel>
+              <ResponsiveContainer width="100%" height={90}>
+                <LineChart data={data} syncId={SYNC} margin={PANE_MARGIN} onMouseMove={handleMove} onMouseLeave={() => setCursor(null)}>
+                  <XAxis dataKey="date" hide />
+                  <YAxis domain={[0, 100]} ticks={[30, 70]} tick={AXIS_TICK} tickLine={false} axisLine={false} width={Y_WIDTH} />
+                  <ReferenceLine y={70} stroke="var(--color-neg)" strokeOpacity={0.45} strokeDasharray="3 3" />
+                  <ReferenceLine y={30} stroke="var(--color-pos)" strokeOpacity={0.45} strokeDasharray="3 3" />
+                  <Tooltip content={() => null} cursor={{ stroke: 'var(--color-divider)' }} />
+                  <Line type="linear" dataKey="rsi" stroke={SERIES.primary} strokeWidth={1} dot={false} {...ANIM} />
+                </LineChart>
+              </ResponsiveContainer>
+            </>
+          )}
+          {panes.macd && (
+            <>
+              <PaneLabel>MACD 12 · 26 · 9</PaneLabel>
+              <ResponsiveContainer width="100%" height={90}>
+                <ComposedChart data={data} syncId={SYNC} margin={PANE_MARGIN} onMouseMove={handleMove} onMouseLeave={() => setCursor(null)}>
+                  <XAxis dataKey="date" hide />
+                  <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} width={Y_WIDTH} tickCount={3} tickFormatter={v => v.toFixed(1)} />
+                  <ReferenceLine y={0} stroke="var(--color-divider)" />
+                  <Tooltip content={() => null} cursor={{ stroke: 'var(--color-divider)' }} />
+                  <Bar dataKey="macd_histogram" isAnimationActive={false} maxBarSize={10}>
+                    {data.map(row => (
+                      <Cell key={row.date} fill={row.macd_histogram >= 0 ? 'var(--color-pos)' : 'var(--color-neg)'} fillOpacity={0.5} />
+                    ))}
+                  </Bar>
+                  <Line type="linear" dataKey="macd" stroke={SERIES.primary} strokeWidth={1} dot={false} {...ANIM} />
+                  <Line type="linear" dataKey="macd_signal" stroke={SERIES.overlay1} strokeWidth={1} strokeDasharray="3 3" dot={false} {...ANIM} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </>
+          )}
         </>
       )}
     </div>

@@ -283,3 +283,82 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Index tape under the nav: one hairline strip, session marker on the left,
+   quotes sliding past on the right. Pauses under the pointer. */
+.tape {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border-bottom: 1px solid var(--color-divider);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  color: var(--color-muted);
+  overflow: hidden;
+}
+
+.tape__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding-right: 16px;
+  margin-right: 16px;
+  border-right: 1px solid var(--color-divider);
+  white-space: nowrap;
+}
+
+.tape__dot {
+  width: 6px;
+  height: 6px;
+  background: var(--color-muted);
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+.tape__dot--live {
+  background: var(--color-pos);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+.tape__track {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tape__run {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+@keyframes tape-run {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.tape__run--live {
+  animation: tape-run linear infinite;
+}
+
+.tape__track:hover .tape__run {
+  animation-play-state: paused;
+}
+
+.tape__copy {
+  display: inline-flex;
+}
+
+.tape__item {
+  display: inline-flex;
+  gap: 10px;
+  padding-right: 40px;
+}
+
+.tape__sym {
+  color: var(--color-text);
+}

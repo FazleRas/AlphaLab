@@ -152,6 +152,35 @@ def get_quote(ticker: str):
         should_cache=lambda q: q.get("price") is not None,
     )
 
+def _fetch_tape_quote(ticker: str):
+    # fast_info only. The tape polls every minute for several symbols, and
+    # .info is the endpoint Yahoo rate-limits hardest; fast_info is served
+    # from the chart API like everything else. Same day-change rule as the
+    # full quote: against the previous session's close.
+    fi = yf.Ticker(ticker).fast_info
+    price = _fast_attr(fi, "last_price")
+    prev_close = _fast_attr(fi, "regular_market_previous_close")
+    change = round(price - prev_close, 2) if price is not None and prev_close else None
+    change_pct = round((change / prev_close) * 100, 2) if change is not None and prev_close else None
+    return {"ticker": ticker.upper(), "price": price, "change": change, "change_pct": change_pct}
+
+def get_tape_quotes(tickers: list[str]):
+    """Price and day change for several symbols. One that fails is left out
+    rather than failing the batch, so the tape keeps moving on a bad symbol."""
+    results = []
+    for ticker in tickers:
+        try:
+            q = cache_json(
+                f"tape:{ticker.upper()}", QUOTE_TTL,
+                lambda t=ticker: _fetch_tape_quote(t),
+                should_cache=lambda q: q.get("price") is not None,
+            )
+        except Exception:
+            continue
+        if q and q.get("price") is not None:
+            results.append(q)
+    return results
+
 def _fetch_indicators(ticker: str, period: str):
     stock = yf.Ticker(ticker)
     data = stock.history(period=period)

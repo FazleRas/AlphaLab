@@ -1,6 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from typing import Optional
-from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest, run_sweep, run_sweep_stored, run_validation, run_compare
+from app.services.market_data import get_multiple_prices, get_tape_quotes, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest, run_sweep, run_sweep_stored, run_validation, run_compare
 from app.services.sweep_store import get_store
 
 router = APIRouter()
@@ -9,6 +9,12 @@ router = APIRouter()
 def prices(tickers: str = Query(...)):
     ticker_list = [t.strip().upper() for t in tickers.split(",")]
     return {"data": get_multiple_prices(ticker_list)}
+
+@router.get("/quotes")
+def quotes(tickers: str = Query(...)):
+    """Compact quotes for the index tape: price, day change, day change %."""
+    ticker_list = [t.strip().upper() for t in tickers.split(",") if t.strip()][:20]
+    return {"quotes": get_tape_quotes(ticker_list)}
 
 @router.get("/history/{ticker}")
 def history(ticker: str, period: str = "1mo"):
