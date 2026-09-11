@@ -10,20 +10,13 @@ const sharpeBand = (s) => {
   return 'var(--color-pos)';
 };
 
-const lerp = (a, b, t) => Math.round(a + (b - a) * t);
-// Loss #ff2f45 → near-black (break-even) → gain #00c9a0. These are literal
-// rather than tokens because the ramp has to interpolate between the
-// endpoints, which CSS variables can't do here; they track --color-neg and
-// --color-pos by hand.
-const HEAT_LOSS = [255, 47, 69];
-const HEAT_MID = [18, 18, 18];
-const HEAT_GAIN = [0, 201, 160];
-
+// Diverging ramp: full loss colour at t=0, the page background at t=0.5,
+// full gain colour at t=1. Mixing against the background token rather than
+// a fixed near-black keeps the ramp legible on the paper theme too.
 const heatColor = (t) => {
-  const [from, to, u] = t <= 0.5
-    ? [HEAT_LOSS, HEAT_MID, t / 0.5]
-    : [HEAT_MID, HEAT_GAIN, (t - 0.5) / 0.5];
-  return `rgb(${lerp(from[0], to[0], u)},${lerp(from[1], to[1], u)},${lerp(from[2], to[2], u)})`;
+  const pct = Math.round(Math.abs(t - 0.5) * 200);
+  const hue = t < 0.5 ? 'var(--color-neg)' : 'var(--color-pos)';
+  return `color-mix(in oklch, ${hue} ${pct}%, var(--color-bg))`;
 };
 
 const fmt = (metric, v) => {
@@ -63,7 +56,7 @@ export default function SweepHeatmap({ data, metric, progress, onSelect }) {
 
   const bg = (v) => {
     if (v == null) return 'var(--color-bg)';
-    if (metric === 'sharpe') return `${sharpeBand(v)}40`;
+    if (metric === 'sharpe') return `color-mix(in oklch, ${sharpeBand(v)} 30%, var(--color-bg))`;
     const t = max === min ? 0.5 : (v - min) / (max - min);
     return heatColor(t);
   };
@@ -71,6 +64,9 @@ export default function SweepHeatmap({ data, metric, progress, onSelect }) {
   const detail = hover || best;
   const inFlight = progress && (progress.status === 'pending' || progress.status === 'running');
   const showProgress = progress && progress.total && progress.status !== 'done';
+  // A grid that arrives all at once (finished sweep, resumed link) cascades
+  // in; a live sweep paints each cell the moment it lands.
+  const stagger = !inFlight;
   const pct = showProgress ? Math.round((progress.completed / progress.total) * 100) : 100;
 
   return (
@@ -124,10 +120,12 @@ export default function SweepHeatmap({ data, metric, progress, onSelect }) {
           ))}
 
           {/* rows */}
-          {sell_values.map(s => (
+          {sell_values.map((s, rowIndex) => (
             <FragmentRow
               key={`r${s}`}
               s={s}
+              rowIndex={rowIndex}
+              stagger={stagger}
               buy_values={buy_values}
               cellAt={cellAt}
               metric={metric}
@@ -158,11 +156,11 @@ export default function SweepHeatmap({ data, metric, progress, onSelect }) {
   );
 }
 
-function FragmentRow({ s, buy_values, cellAt, metric, bg, best, onSelect, setHover }) {
+function FragmentRow({ s, rowIndex, stagger, buy_values, cellAt, metric, bg, best, onSelect, setHover }) {
   return (
     <>
       <div className="font-mono text-xs flex items-center justify-end pr-1" style={{ color: 'var(--color-muted)' }}>{s}</div>
-      {buy_values.map(b => {
+      {buy_values.map((b, colIndex) => {
         const cell = cellAt(b, s);
         // A missing cell hasn't been computed yet (sweep still running or
         // cancelled early); a present cell with a null metric never traded.
@@ -187,12 +185,13 @@ function FragmentRow({ s, buy_values, cellAt, metric, bg, best, onSelect, setHov
             onClick={() => v != null && onSelect(b, s)}
             onMouseEnter={() => setHover(cell)}
             onMouseLeave={() => setHover(null)}
-            className="font-mono text-xs text-center py-2"
+            className={`font-mono text-xs text-center py-2 heat-cell ${isBest ? 'heat-best' : 'cell-in'}`}
             style={{
               backgroundColor: bg(v),
               color: v == null ? 'var(--color-muted)' : 'var(--color-text)',
               border: isBest ? '2px solid var(--color-text)' : '1px solid var(--color-divider)',
               cursor: v == null ? 'default' : 'pointer',
+              animationDelay: stagger ? `${(rowIndex * buy_values.length + colIndex) * 14}ms` : '0ms',
             }}
           >
             {fmt(metric, v)}

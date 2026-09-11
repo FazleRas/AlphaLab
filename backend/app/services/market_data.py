@@ -247,6 +247,12 @@ def get_signals(ticker: str):
         "macd": latest["macd"],
         "macd_signal": latest["macd_signal"],
         "macd_histogram": latest["macd_histogram"],
+        # Last ~30 closes for an inline sparkline. Same rows the signals were
+        # read from, so it costs no extra fetch.
+        "sparkline": [
+            d["close"] for d in data[-30:]
+            if d["close"] is not None and d["close"] == d["close"]
+        ],
     }
 
 def scan_tickers(tickers: list[str], filters: dict):

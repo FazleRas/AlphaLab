@@ -176,10 +176,12 @@ function App() {
         {/* key resets the boundary when switching tabs, so a crash in one
             tab never blocks the others */}
         <ErrorBoundary key={activeTab}>
-          {activeTab === 'dashboard' && <Dashboard />}
-          {activeTab === 'scanner' && <Scanner />}
-          {activeTab === 'backtest' && <Backtest user={user} />}
-          {activeTab === 'watchlist' && <WatchlistTab user={user} loading={loading} />}
+          <div className="fade-up">
+            {activeTab === 'dashboard' && <Dashboard />}
+            {activeTab === 'scanner' && <Scanner />}
+            {activeTab === 'backtest' && <Backtest user={user} />}
+            {activeTab === 'watchlist' && <WatchlistTab user={user} loading={loading} />}
+          </div>
         </ErrorBoundary>
       </main>
     </div>

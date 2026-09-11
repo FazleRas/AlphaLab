@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { authFetch } from '../api';
+import Sparkline, { WindowChange } from './Sparkline';
 import useColdStartHint from '../hooks/useColdStartHint';
 import API from '../config';
 
@@ -120,13 +121,15 @@ export default function Watchlist() {
       {tickers.map(symbol => {
         const q = quotes[symbol];
         return (
-          <div key={symbol} className="flex items-center justify-between p-4 mb-3"
+          <div key={symbol} className="flex items-center justify-between p-4 mb-3 fade-up"
                style={{ border: '1px solid var(--color-divider)' }}>
             <div className="flex items-center gap-6">
               <span className="font-mono text-lg" style={{ color: 'var(--color-text)' }}>{symbol}</span>
               {q ? (
                 <>
                   <span className="font-mono text-sm" style={{ color: 'var(--color-accent)' }}>${q.close}</span>
+                  <Sparkline data={q.sparkline} width={90} height={24} />
+                  <WindowChange data={q.sparkline} />
                   <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>
                     RSI <span style={{ color: rsiColor(q.rsi) }}>{q.rsi}</span>
                   </span>

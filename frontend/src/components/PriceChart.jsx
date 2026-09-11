@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { LineChart, BarChart, Line, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend, ReferenceDot, ReferenceArea } from 'recharts';
 import API from '../config';
+import { ChartSkeleton } from './Skeleton';
 import {
   SERIES,
   makeDateFormatter,
@@ -198,7 +199,7 @@ return (
     )}
 
       {loading ? (
-        <p className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>LOADING...</p>
+        <ChartSkeleton height={300} label={false} bare />
       ) : error ? (
         <p className="font-mono text-xs" style={{ color: 'var(--color-neg)' }}>{error}</p>
       ) : (
@@ -227,7 +228,9 @@ return (
                 dot={false}
                 legendType="square"
                 hide={!!hidden[key]}
-                isAnimationActive={false}
+                isAnimationActive
+                animationDuration={800}
+                animationEasing="ease-out"
               />
             ))}
             {measureRefs()}
@@ -240,7 +243,7 @@ return (
             <YAxis tick={{ fontFamily: 'monospace', fontSize: 10, fill: 'var(--color-muted)' }} tickLine={false} axisLine={false} domain={['auto', 'auto']} width={60} tickFormatter={v => `$${v}`} />
             <Tooltip content={<PriceTooltip first={data[0]?.close} formatDate={formatDate} />} />
             <Legend iconType="square" wrapperStyle={legendWrapperStyle} />
-            <Bar dataKey="close" fill={SERIES.primary} name="CLOSE" legendType="square" />
+            <Bar dataKey="close" fill={SERIES.primary} name="CLOSE" legendType="square" isAnimationActive animationDuration={800} animationEasing="ease-out" />
             {measureRefs()}
             </BarChart>
         </ResponsiveContainer>

@@ -4,6 +4,8 @@ import SweepHeatmap from './SweepHeatmap';
 import ValidationPanel from './ValidationPanel';
 import CompareView from './CompareView';
 import SavedRuns from './SavedRuns';
+import AnimatedNumber from './AnimatedNumber';
+import { ChartSkeleton, StatGridSkeleton } from './Skeleton';
 import useColdStartHint from '../hooks/useColdStartHint';
 import { authFetch } from '../api';
 import API from '../config';
@@ -14,12 +16,20 @@ const ColdStartHint = () => (
   </p>
 );
 
-const StatCard = ({ label, value, color }) => (
+// Pass `num` + `format` for a value that should count up into place;
+// `value` renders a preformatted string as-is.
+const StatCard = ({ label, value, num, format, color }) => (
   <div className="p-3" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-divider)' }}>
     <p className="font-mono text-xs mb-1 tracking-widest" style={{ color: 'var(--color-muted)' }}>{label}</p>
-    <p className="font-mono text-sm" style={{ color: color || 'var(--color-text)' }}>{value ?? '—'}</p>
+    <p className="font-mono text-sm" style={{ color: color || 'var(--color-text)' }}>
+      {num !== undefined ? <AnimatedNumber value={num} format={format} /> : (value ?? '—')}
+    </p>
   </div>
 );
+
+const signedPct = (v) => `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
+const pct = (v) => `${v.toFixed(2)}%`;
+const posNeg = (v) => (v > 0 ? 'var(--color-pos)' : 'var(--color-neg)');
 
 // Sharpe color bands: <0 red, 0–1 orange, 1–2 white, >2 green.
 const sharpeColor = (s) => {
@@ -69,6 +79,8 @@ export default function Backtest({ user }) {
   const [copied, setCopied] = useState(false);
   const [saveState, setSaveState] = useState('idle'); // 'idle' | 'saving' | 'saved'
   const [savedRefresh, setSavedRefresh] = useState(0);
+  // Trade the user is pointing at in the history list; lit on the chart.
+  const [activeTrade, setActiveTrade] = useState(null);
   const waking = useColdStartHint(loading);
 
   const periods = ['6mo', '1y', '2y', '5y', 'max'];
@@ -92,8 +104,10 @@ export default function Backtest({ user }) {
     try {
       const res = await fetch(`${API}/backtest/${tk}?period=${per}&strategy=${strat}&buy_rsi=${b}&sell_rsi=${s}`);
       const data = await res.json();
-      if (data.error) {
-        setError(data.error);
+      // A 5xx carries FastAPI's {detail} rather than {error}; without this
+      // check it would be rendered as a result and crash on the missing keys.
+      if (!res.ok || data.error) {
+        setError(data.error || data.detail || `Backend error ${res.status}. The market data source may be flaky - try again.`);
         setResults(null);
       } else {
         setResults(data);
@@ -236,8 +250,8 @@ export default function Backtest({ user }) {
     try {
       const res = await fetch(`${API}/compare/${tk}?period=${per}&buy_rsi=${b}&sell_rsi=${s}`);
       const data = await res.json();
-      if (data.error) {
-        setError(data.error);
+      if (!res.ok || data.error) {
+        setError(data.error || data.detail || `Backend error ${res.status}. The market data source may be flaky - try again.`);
         setCompareData(null);
       } else {
         setCompareData(data);
@@ -546,7 +560,8 @@ export default function Backtest({ user }) {
       {waking && loading && <ColdStartHint />}
       {error && <p className="font-mono text-sm mb-4" style={{ color: 'var(--color-neg)' }}>{error}</p>}
 
-      {mode === 'compare' && compareData && <CompareView data={compareData} />}
+      {mode === 'compare' && loading && <ChartSkeleton height={300} className="mb-4" />}
+      {mode === 'compare' && !loading && compareData && <div className="fade-up"><CompareView data={compareData} /></div>}
 
       {mode === 'sweep' && sweepData && (
         <>
@@ -582,9 +597,22 @@ export default function Backtest({ user }) {
         </>
       )}
 
-      {mode === 'single' && results && (
-        <>
-          <EquityCurveChart data={results.equity_curve} benchmark={results.buy_hold_curve} spy={results.spy_curve} />
+      {mode === 'single' && loading && (
+        <div className="fade-up">
+          <ChartSkeleton height={300} className="mb-4" />
+          <StatGridSkeleton className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4" />
+        </div>
+      )}
+
+      {mode === 'single' && !loading && results && (
+        <div className="fade-up">
+          <EquityCurveChart
+            data={results.equity_curve}
+            benchmark={results.buy_hold_curve}
+            spy={results.spy_curve}
+            trades={results.trades}
+            activeTrade={activeTrade}
+          />
 
           {/* Summary */}
           <div className="p-4 mb-4" style={{ border: '1px solid var(--color-divider)' }}>
@@ -594,40 +622,39 @@ export default function Backtest({ user }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <StatCard
                 label="TOTAL RETURN"
-                value={`${results.total_return_pct > 0 ? '+' : ''}${results.total_return_pct}%`}
-                color={results.total_return_pct > 0 ? 'var(--color-pos)' : 'var(--color-neg)'}
+                num={results.total_return_pct}
+                format={signedPct}
+                color={posNeg(results.total_return_pct)}
               />
               <StatCard
                 label="ANNUALIZED RETURN (CAGR)"
-                value={results.cagr_pct != null ? `${results.cagr_pct > 0 ? '+' : ''}${results.cagr_pct}%` : null}
-                color={results.cagr_pct != null ? (results.cagr_pct > 0 ? 'var(--color-pos)' : 'var(--color-neg)') : undefined}
+                num={results.cagr_pct}
+                format={signedPct}
+                color={results.cagr_pct != null ? posNeg(results.cagr_pct) : undefined}
               />
               <StatCard
                 label="SHARPE"
-                value={results.sharpe != null ? results.sharpe.toFixed(2) : null}
+                num={results.sharpe}
+                format={v => v.toFixed(2)}
                 color={sharpeColor(results.sharpe)}
               />
-              <StatCard
-                label="BUY & HOLD"
-                value={`${results.buy_hold_return_pct > 0 ? '+' : ''}${results.buy_hold_return_pct}%`}
-              />
+              <StatCard label="BUY & HOLD" num={results.buy_hold_return_pct} format={signedPct} />
               {results.spy_return_pct != null && (
-                <StatCard
-                  label="SPY"
-                  value={`${results.spy_return_pct > 0 ? '+' : ''}${results.spy_return_pct}%`}
-                />
+                <StatCard label="SPY" num={results.spy_return_pct} format={signedPct} />
               )}
               <StatCard
                 label="MAX DRAWDOWN"
-                value={`${results.max_drawdown_pct}%`}
+                num={results.max_drawdown_pct}
+                format={pct}
                 color={results.max_drawdown_pct < 0 ? 'var(--color-neg)' : 'var(--color-muted)'}
               />
               <StatCard
                 label="WIN RATE"
-                value={`${results.win_rate_pct}%`}
+                num={results.win_rate_pct}
+                format={pct}
                 color={results.win_rate_pct >= 50 ? 'var(--color-pos)' : 'var(--color-neg)'}
               />
-              <StatCard label="NUM TRADES" value={results.num_trades} />
+              <StatCard label="NUM TRADES" num={results.num_trades} format={v => String(Math.round(v))} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="p-3" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-divider)' }}>
@@ -667,7 +694,13 @@ export default function Backtest({ user }) {
             </div>
             <div className="space-y-2">
               {results.trades.map((trade, i) => (
-                <div key={i} className="flex items-center justify-between py-2" style={{ borderBottom: '1px solid var(--color-hairline)' }}>
+                <div
+                  key={i}
+                  className={`trade-row flex items-center justify-between py-2${activeTrade === i ? ' trade-row--active' : ''}`}
+                  style={{ borderBottom: '1px solid var(--color-hairline)' }}
+                  onMouseEnter={() => setActiveTrade(i)}
+                  onMouseLeave={() => setActiveTrade(null)}
+                >
                   <div className="flex items-center gap-4">
                     <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>#{i + 1}</span>
                     <span className="font-mono text-xs" style={{ color: 'var(--color-muted)' }}>
@@ -691,7 +724,7 @@ export default function Backtest({ user }) {
               ))}
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import Sparkline, { WindowChange } from './Sparkline';
+import { ScanCardSkeleton } from './Skeleton';
 import useColdStartHint from '../hooks/useColdStartHint';
 import API from '../config';
 
@@ -9,6 +11,14 @@ const signals = [
   { key: 'rsi_overbought', label: 'RSI OVERBOUGHT' },
   { key: 'macd_bullish_crossover', label: 'MACD BULLISH CROSSOVER' },
   { key: 'macd_bearish_crossover', label: 'MACD BEARISH CROSSOVER' },
+];
+
+// One-tap ticker sets for the empty state.
+const PRESETS = [
+  { label: 'MEGA CAP', tickers: 'AAPL,MSFT,GOOGL,AMZN,META,NVDA' },
+  { label: 'SEMIS', tickers: 'NVDA,AMD,AVGO,TSM,INTC,MU,QCOM' },
+  { label: 'EV & AUTO', tickers: 'TSLA,RIVN,F,GM,TM' },
+  { label: 'ETFS', tickers: 'SPY,QQQ,IWM,DIA,XLF,XLE' },
 ];
 
 const rsiColor = (rsi) => {
@@ -40,8 +50,10 @@ export default function Scanner() {
     }));
   };
 
-  const scan = async () => {
-    if (!tickers) return;
+  const scan = async (arg) => {
+    const list = typeof arg === 'string' ? arg : tickers;
+    if (!list) return;
+    if (list !== tickers) setTickers(list);
     setLoading(true);
     setError(null);
     try {
@@ -49,7 +61,7 @@ export default function Scanner() {
         .filter(([, v]) => v)
         .map(([k]) => `${k}=true`)
         .join('&');
-      const url = `${API}/scan?tickers=${tickers}${activeFilters ? '&' + activeFilters : ''}`;
+      const url = `${API}/scan?tickers=${list}${activeFilters ? '&' + activeFilters : ''}`;
       const res = await fetch(url);
       const data = await res.json();
       setResults(data.results);
@@ -107,9 +119,29 @@ export default function Scanner() {
       )}
       {error && <p className="font-mono text-sm mb-4" style={{ color: 'var(--color-neg)' }}>{error}</p>}
 
+      {/* Empty state: preset lists to scan with one tap. */}
+      {!results && !loading && (
+        <div className="p-4 mb-6 fade-up" style={{ border: '1px solid var(--color-divider)' }}>
+          <p className="font-mono text-xs mb-3 tracking-widest" style={{ color: 'var(--color-muted)' }}>PRESETS</p>
+          <div className="flex flex-wrap gap-2">
+            {PRESETS.map(p => (
+              <button key={p.label} className="chip" onClick={() => scan(p.tickers)} aria-label={`${p.label}: ${p.tickers}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading && (
+        <div aria-hidden="true">
+          {[0, 1, 2].map(i => <ScanCardSkeleton key={i} />)}
+        </div>
+      )}
+
       {/* Results */}
-      {results && (
-        <div>
+      {results && !loading && (
+        <div className="fade-up">
           {/* Count bar: results and how many filters produced them. */}
           <div className="p-4 mb-4" style={{ border: '1px solid var(--color-divider)' }}>
             <p className="font-mono text-xs tracking-widest" style={{ color: 'var(--color-muted)' }}>
@@ -123,9 +155,11 @@ export default function Scanner() {
             <div key={r.ticker} className="p-4 mb-3" style={{ border: '1px solid var(--color-divider)' }}>
                 
                 {/* Header */}
-                <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center justify-between gap-4 mb-4">
                 <span className="font-mono text-lg" style={{ color: 'var(--color-text)' }}>{r.ticker}</span>
-                <div className="text-right">
+                <div className="flex items-center gap-4">
+                    <Sparkline data={r.sparkline} width={120} height={32} />
+                    <WindowChange data={r.sparkline} />
                     <span className="font-mono text-lg" style={{ color: 'var(--color-accent)' }}>${r.close}</span>
                 </div>
                 </div>

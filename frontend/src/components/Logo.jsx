@@ -18,10 +18,10 @@ export default function Logo({ size = 18, strokeWidth = 9, className, style }) {
       strokeLinejoin="round"
       role="img"
       aria-label="AlphaLab"
-      className={className}
+      className={['logo-draw', className].filter(Boolean).join(' ')}
       style={style}
     >
-      <path d="M11 61 L36 27 L56 61 L94 61" />
+      <path d="M11 61 L36 27 L56 61 L94 61" pathLength="1" />
     </svg>
   );
 }
