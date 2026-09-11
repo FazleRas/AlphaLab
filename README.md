@@ -40,7 +40,7 @@ It's also an overfitting check, in two layers. First, the heatmap itself: a *reg
 
 - `GET /prices?tickers=AAPL,TSLA,NVDA` — latest closes for multiple tickers
 - `GET /history/{ticker}?period=3mo` — OHLCV candle data across multiple timeframes
-- `GET /quote/{ticker}` — price, day change, high/low, volume, market cap, PE ratio
+- `GET /quote/{ticker}` — price, previous close, day change (measured against the previous session's close), high/low, volume, market cap, PE ratio
 - `GET /indicators/{ticker}?period=6mo` — SMA20, SMA50, RSI, MACD alongside daily closes
 - `GET /signals/{ticker}` — boolean signal snapshot (bullish trend, RSI overbought/oversold, MACD crossover)
 - `GET /scan?tickers=AAPL,NVDA,TSLA&bullish_trend=true` — multi-ticker scanner, filters by active signals

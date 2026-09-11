@@ -76,12 +76,20 @@ def _fallback_quote(stock, ticker: str):
     fi = stock.fast_info
     price = _fast_attr(fi, "last_price")
     open_price = _fast_attr(fi, "open")
-    change = round(price - open_price, 2) if price and open_price else None
-    change_pct = round((change / open_price) * 100, 2) if change and open_price else None
+    # Day change is quoted against the previous session's close, not the day's
+    # open — measuring from the open silently swallows the overnight gap, so a
+    # stock that gapped down and then drifted up reads as green. Prefer
+    # regular_market_previous_close over previous_close: the latter is built
+    # from pre/post-market bars and falls back to .info, the rate-limited
+    # endpoint this whole path exists to avoid.
+    prev_close = _fast_attr(fi, "regular_market_previous_close")
+    change = round(price - prev_close, 2) if price is not None and prev_close else None
+    change_pct = round((change / prev_close) * 100, 2) if change is not None and prev_close else None
     return {
         "ticker": ticker.upper(),
         "price": price,
         "open": open_price,
+        "previous_close": prev_close,
         "change": change,
         "change_pct": change_pct,
         "day_high": _fast_attr(fi, "day_high"),
@@ -109,13 +117,18 @@ def _fetch_quote(ticker: str):
     )
     
     open_price = info.get("regularMarketOpen") or info.get("open")
-    change = round(price - open_price, 2) if price and open_price else None
-    change_pct = round((change / open_price) * 100, 2) if change and open_price else None
+    # Day change is measured from the previous session's close, matching how
+    # every quote source reports it. Measuring from the open understates the
+    # move by exactly the size of the overnight gap.
+    prev_close = info.get("regularMarketPreviousClose") or info.get("previousClose")
+    change = round(price - prev_close, 2) if price is not None and prev_close else None
+    change_pct = round((change / prev_close) * 100, 2) if change is not None and prev_close else None
 
     return {
         "ticker": ticker.upper(),
         "price": price,
         "open": open_price,
+        "previous_close": prev_close,
         "change": change,
         "change_pct": change_pct,
         "day_high": info.get("dayHigh") or info.get("regularMarketDayHigh"),
