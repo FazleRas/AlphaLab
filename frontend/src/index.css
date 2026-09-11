@@ -150,3 +150,136 @@ body {
 .recharts-legend-item {
   cursor: pointer;
 }
+
+/* ---------------------------------------------------------------------------
+   Motion. Everything here is decorative: content is fully laid out before the
+   animation starts, and reduced-motion users get the end state immediately.
+   ------------------------------------------------------------------------ */
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.fade-up {
+  animation: fade-up 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Shimmering placeholder blocks (see Skeleton.jsx). */
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--color-hairline) 25%, var(--color-divider) 50%, var(--color-hairline) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Sparklines draw their stroke in, then the fill and end dot fade up. */
+@keyframes draw {
+  from { stroke-dashoffset: 1; }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.spark-draw {
+  stroke-dasharray: 1;
+  animation: draw 700ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.spark-fill {
+  animation: fade-in 500ms ease-out 350ms both;
+}
+
+/* The header mark draws itself once per page load. */
+.logo-draw path {
+  stroke-dasharray: 1;
+  animation: draw 900ms cubic-bezier(0.4, 0, 0.2, 1) 120ms both;
+}
+
+/* Quote-terminal flash on a value that changed. */
+@keyframes flash-pos {
+  from { background-color: color-mix(in oklch, var(--color-pos) 40%, transparent); }
+  to   { background-color: transparent; }
+}
+
+@keyframes flash-neg {
+  from { background-color: color-mix(in oklch, var(--color-neg) 40%, transparent); }
+  to   { background-color: transparent; }
+}
+
+.flash-pos { animation: flash-pos 800ms ease-out; }
+.flash-neg { animation: flash-neg 800ms ease-out; }
+
+/* Heatmap cells pop in as they land; the best cell pulses a ring three times. */
+@keyframes cell-in {
+  from { opacity: 0; transform: scale(0.55); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+@keyframes ring {
+  0%   { box-shadow: 0 0 0 0 color-mix(in oklch, var(--color-text) 70%, transparent); }
+  100% { box-shadow: 0 0 0 8px color-mix(in oklch, var(--color-text) 0%, transparent); }
+}
+
+.heat-cell {
+  position: relative;
+  transition: transform 120ms ease-out;
+}
+
+.heat-cell:hover {
+  transform: scale(1.08);
+  z-index: 1;
+}
+
+.cell-in {
+  animation: cell-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.heat-best {
+  animation: cell-in 280ms cubic-bezier(0.2, 0.8, 0.2, 1) both, ring 1.1s ease-out 400ms 3;
+}
+
+/* Example ticker cards on the empty dashboard. */
+.example-card {
+  transition: border-color 120ms linear, transform 120ms ease-out;
+}
+
+.example-card:hover {
+  border-color: var(--color-text) !important;
+  transform: translateY(-1px);
+}
+
+/* Equity-curve trade markers pop in after the line has drawn. */
+.marker-in {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: cell-in 260ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* Trade rows light up when they are the highlighted span on the chart. */
+.trade-row {
+  transition: background-color 120ms linear;
+  margin: 0 -8px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.trade-row--active {
+  background-color: color-mix(in oklch, var(--color-accent) 14%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

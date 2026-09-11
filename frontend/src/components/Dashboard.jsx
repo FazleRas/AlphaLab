@@ -1,20 +1,33 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import PriceChart from './PriceChart';
+import Sparkline, { WindowChange } from './Sparkline';
+import AnimatedNumber from './AnimatedNumber';
+import { QuoteSkeleton, ExampleCardSkeleton } from './Skeleton';
 import useColdStartHint from '../hooks/useColdStartHint';
+import useRecentTickers from '../hooks/useRecentTickers';
 import API from '../config';
 
-const StatCard = ({ label, value, color }) => (
-  <div className="p-3" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-divider)' }}>
-    <p className="font-mono text-xs mb-1 tracking-widest" style={{ color: 'var(--color-muted)' }}>{label}</p>
-    <p className="font-mono text-sm" style={{ color: color || 'var(--color-text)' }}>{value ?? '-'}</p>
-  </div>
-);
+// Offered on the empty dashboard so the first thing on screen is a market,
+// not a blank input. One /scan call covers all of them.
+const EXAMPLES = ['AAPL', 'NVDA', 'TSLA', 'SPY', 'MSFT', 'AMZN'];
+
+const LABEL = { fontSize: '10.5px', letterSpacing: '0.16em', color: 'var(--color-muted)' };
 
 // Format at the edge regardless of what the API sends: a quote served from
 // yfinance's fast_info fallback once reached the screen as
 // $326.57000732421875. The backend rounds now too; this is the backstop.
-const fixed2 = (v) => (v == null ? '-' : Number(v).toFixed(2));
-const money = (v) => (v == null ? '-' : `$${fixed2(v)}`);
+const fixed2 = (v) => Number(v).toFixed(2);
+const money = (v) => `$${fixed2(v)}`;
+const signed2 = (v) => `${v >= 0 ? '+' : ''}${fixed2(v)}`;
+
+const StatCard = ({ label, value, format = fixed2, color }) => (
+  <div className="p-3" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-divider)' }}>
+    <p className="font-mono text-xs mb-1 tracking-widest" style={{ color: 'var(--color-muted)' }}>{label}</p>
+    <p className="font-mono text-sm" style={{ color: color || 'var(--color-text)' }}>
+      <AnimatedNumber value={value} format={format} empty="-" />
+    </p>
+  </div>
+);
 
 const rsiColor = (rsi) => {
   if (!rsi) return 'var(--color-text)';
@@ -41,6 +54,29 @@ const SignalRow = ({ label, value, type }) => (
   </div>
 );
 
+const ExampleCard = ({ r, onPick }) => (
+  <button
+    onClick={() => onPick(r.ticker)}
+    className="example-card p-3 text-left"
+    style={{
+      border: '1px solid var(--color-divider)',
+      background: 'transparent',
+      fontFamily: 'inherit',
+      color: 'var(--color-text)',
+      cursor: 'pointer',
+    }}
+  >
+    <div className="flex items-center justify-between mb-2">
+      <span style={{ fontSize: '12.5px', letterSpacing: '0.16em' }}>{r.ticker}</span>
+      <span className="font-mono text-sm">{money(r.close)}</span>
+    </div>
+    <div className="flex items-end justify-between gap-3">
+      <Sparkline data={r.sparkline} width={110} height={30} />
+      <WindowChange data={r.sparkline} />
+    </div>
+  </button>
+);
+
 export default function Dashboard() {
   const [ticker, setTicker] = useState('');
   const [quote, setQuote] = useState(null);
@@ -48,6 +84,22 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const waking = useColdStartHint(loading);
+  const [recent, addRecent] = useRecentTickers();
+
+  // Example cards for the empty state. null = not loaded, [] = gave up.
+  const [examples, setExamples] = useState(null);
+  const [examplesLoading, setExamplesLoading] = useState(true);
+  const examplesWaking = useColdStartHint(examplesLoading);
+
+  useEffect(() => {
+    let live = true;
+    fetch(`${API}/scan?tickers=${EXAMPLES.join(',')}`)
+      .then(r => (r.ok ? r.json() : { results: [] }))
+      .then(d => { if (live) setExamples(d.results || []); })
+      .catch(() => { if (live) setExamples([]); })
+      .finally(() => { if (live) setExamplesLoading(false); });
+    return () => { live = false; };
+  }, []);
 
   // A non-ok response means the backend IS up but a request failed. 404
   // (unknown ticker) and 503 (upstream rate limit) carry a human-readable
@@ -59,14 +111,18 @@ export default function Dashboard() {
     return `Backend error ${res.status}${detail ? `: ${detail}` : ''}. The market data source may be flaky - try again.`;
   };
 
-  const search = async () => {
-    if (!ticker) return;
+  // Called with a symbol from the example cards / recents, or with the click
+  // event from the search button, in which case the input's value is used.
+  const search = async (arg) => {
+    const sym = (typeof arg === 'string' ? arg : ticker).trim().toUpperCase();
+    if (!sym) return;
+    setTicker(sym);
     setLoading(true);
     setError(null);
     try {
       const [quoteRes, signalsRes] = await Promise.all([
-        fetch(`${API}/quote/${ticker}`),
-        fetch(`${API}/signals/${ticker}`),
+        fetch(`${API}/quote/${sym}`),
+        fetch(`${API}/signals/${sym}`),
       ]);
       if (!quoteRes.ok) {
         setError(await friendlyError(quoteRes));
@@ -75,6 +131,7 @@ export default function Dashboard() {
       } else {
         const quoteData = await quoteRes.json();
         setQuote({ ticker: quoteData.ticker, ...quoteData.quote });
+        addRecent(quoteData.ticker);
         if (signalsRes.ok) {
           const signalsData = await signalsRes.json();
           // Only store a payload the signals panel can actually render.
@@ -93,6 +150,7 @@ export default function Dashboard() {
   };
 
   const isUp = quote?.change >= 0;
+  const dirColor = isUp ? 'var(--color-pos)' : 'var(--color-neg)';
 
   return (
     <div className="max-w-4xl mx-auto">
@@ -123,23 +181,62 @@ export default function Dashboard() {
       )}
       {error && <p className="font-mono text-sm mb-6" style={{ color: 'var(--color-neg)' }}>{error}</p>}
 
-      {quote && (
-        <>
+      {loading && <QuoteSkeleton />}
+
+      {/* Empty state: recents and a few live example tickers to tap. */}
+      {!quote && !loading && (
+        <div className="fade-up">
+          {recent.length > 0 && (
+            <div className="mb-6">
+              <p className="mb-2" style={LABEL}>RECENT</p>
+              <div className="flex flex-wrap gap-2">
+                {recent.map(t => (
+                  <button key={t} className="chip" onClick={() => search(t)}>{t}</button>
+                ))}
+              </div>
+            </div>
+          )}
+          {(examplesLoading || (examples && examples.length > 0)) && (
+            <p className="mb-2" style={LABEL}>TRY ONE</p>
+          )}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {examplesLoading
+              ? EXAMPLES.map(t => <ExampleCardSkeleton key={t} />)
+              : (examples || []).map(r => <ExampleCard key={r.ticker} r={r} onPick={search} />)}
+          </div>
+          {examplesWaking && examplesLoading && (
+            <p className="font-mono text-xs mt-3" style={{ color: 'var(--color-accent)' }}>
+              Waking up the backend. The first request after idle can take ~30s.
+            </p>
+          )}
+        </div>
+      )}
+
+      {quote && !loading && (
+        <div className="fade-up">
           {/* Price Header */}
           {/* The quote card's border carries the day's direction, so the whole
               block reads up or down before you parse the numbers. */}
-          <div className="p-5 mb-4" style={{ border: `1px solid ${isUp ? 'var(--color-pos)' : 'var(--color-neg)'}` }}>
-            <div className="flex items-start justify-between">
+          <div className="p-5 mb-4" style={{ border: `1px solid ${dirColor}` }}>
+            <div className="flex items-start justify-between gap-6">
               <div>
                 <p className="font-mono text-xs tracking-widest mb-1" style={{ color: 'var(--color-muted)' }}>{quote.ticker}</p>
-                <p className="font-mono text-4xl" style={{ color: 'var(--color-text)' }}>{money(quote.price)}</p>
-              </div>
-              <div className="text-right">
-                <p className="font-mono text-2xl" style={{ color: isUp ? 'var(--color-pos)' : 'var(--color-neg)' }}>
-                  {isUp ? '+' : ''}{fixed2(quote.change)}
+                <p className="font-mono text-4xl" style={{ color: 'var(--color-text)' }}>
+                  <AnimatedNumber value={quote.price} format={money} />
                 </p>
-                <p className="font-mono text-sm" style={{ color: isUp ? 'var(--color-pos)' : 'var(--color-neg)' }}>
-                  {isUp ? '+' : ''}{fixed2(quote.change_pct)}%
+              </div>
+              {signals?.sparkline?.length > 1 && (
+                <div className="hidden md:block self-center">
+                  <Sparkline data={signals.sparkline} width={180} height={48} />
+                  <p className="text-right mt-1" style={LABEL}>30 SESSIONS</p>
+                </div>
+              )}
+              <div className="text-right">
+                <p className="font-mono text-2xl" style={{ color: dirColor }}>
+                  <AnimatedNumber value={quote.change} format={signed2} />
+                </p>
+                <p className="font-mono text-sm" style={{ color: dirColor }}>
+                  <AnimatedNumber value={quote.change_pct} format={v => `${signed2(v)}%`} />
                 </p>
               </div>
             </div>
@@ -147,10 +244,10 @@ export default function Dashboard() {
 
           {/* Stats */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
-            <StatCard label="OPEN" value={money(quote.open)} />
-            <StatCard label="DAY HIGH" value={money(quote.day_high)} />
-            <StatCard label="DAY LOW" value={money(quote.day_low)} />
-            <StatCard label="P/E RATIO" value={quote.pe_ratio?.toFixed(2)} />
+            <StatCard label="OPEN" value={quote.open} format={money} />
+            <StatCard label="DAY HIGH" value={quote.day_high} format={money} />
+            <StatCard label="DAY LOW" value={quote.day_low} format={money} />
+            <StatCard label="P/E RATIO" value={quote.pe_ratio} />
           </div>
 
           <PriceChart ticker={quote?.ticker} />
@@ -159,7 +256,7 @@ export default function Dashboard() {
           {signals?.signals && (
             <div className="p-4" style={{ border: '1px solid var(--color-divider)' }}>
               <p className="font-mono text-xs mb-4 tracking-widest" style={{ color: 'var(--color-muted)' }}>SIGNALS</p>
-              
+
               <div className="grid grid-cols-2 gap-6 mb-4">
                 {/* Bullish */}
                 <div>
@@ -187,13 +284,13 @@ export default function Dashboard() {
               {/* Indicator values */}
               <div className="grid grid-cols-4 gap-2 pt-4" style={{ borderTop: '1px solid var(--color-hairline)' }}>
                 <StatCard label="RSI" value={signals.rsi} color={rsiColor(signals.rsi)} />
-                <StatCard label="MACD" value={signals.macd} color={macdColor(signals.macd_histogram)} />
+                <StatCard label="MACD" value={signals.macd} format={v => v.toFixed(4)} color={macdColor(signals.macd_histogram)} />
                 <StatCard label="SMA 20" value={signals.sma_20} />
                 <StatCard label="SMA 50" value={signals.sma_50} />
-            </div>
+              </div>
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );
