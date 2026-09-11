@@ -503,6 +503,31 @@ def run_sweep(ticker: str, period: str, strategy: str, buy_values, sell_values):
         "best": best,
     }
 
+def run_sweep_stored(store, sweep_id: str, ticker: str, period: str, strategy: str,
+                     buy_values, sell_values):
+    """Background-task flavor of run_sweep: same grid, same cell order, but
+    each cell is recorded to the store as it finishes so the API can serve
+    live progress. Between cells it re-reads the store, so a cancelled (or
+    expired) sweep stops early instead of burning the rest of the grid.
+    The store is duck-typed (see app.services.sweep_store.SweepStore) to
+    keep this module free of a sweep_store import."""
+    store.set_status(sweep_id, "running")
+    try:
+        data = _clean_indicators(get_indicators(ticker, period=period))
+        if not data:
+            store.set_status(sweep_id, "failed", error="Not enough data to run a sweep")
+            return
+        for sell_rsi in sell_values:
+            for buy_rsi in buy_values:
+                state = store.get(sweep_id)
+                if state is None or state["status"] == "cancelled":
+                    return
+                store.record_result(sweep_id, _metrics_cell(data, strategy, buy_rsi, sell_rsi))
+    except Exception as e:
+        store.set_status(sweep_id, "failed", error=str(e))
+        return
+    store.set_status(sweep_id, "done")
+
 def run_validation(ticker: str, period: str, strategy: str, buy_values, sell_values,
                    split: float = 0.7, top_n: int = 3):
     """Out-of-sample validation: sweep the parameter grid on the earlier (train)
