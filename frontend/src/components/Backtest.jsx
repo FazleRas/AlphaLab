@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import EquityCurveChart from './EquityCurveChart';
 import SweepHeatmap from './SweepHeatmap';
 import ValidationPanel from './ValidationPanel';
@@ -30,6 +30,22 @@ const sharpeColor = (s) => {
   return 'var(--color-pos)';
 };
 
+// Sweeps run as a background job on the backend; the UI polls
+// GET /sweeps/{id} at this cadence and paints cells as they land.
+const SWEEP_POLL_MS = 350;
+const SWEEP_TERMINAL = new Set(['done', 'failed', 'cancelled']);
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Reshape a /sweeps/{id} state into the shape SweepHeatmap and the
+// validation call already consume — the same one GET /sweep/{ticker} returns.
+const sweepStateToData = (state) => ({
+  ...state.params_grid,
+  grid: state.results,
+  best: state.best,
+  sweep_id: state.sweep_id,
+  status: state.status,
+});
+
 export default function Backtest({ user }) {
   const [ticker, setTicker] = useState('');
   const [period, setPeriod] = useState('2y');
@@ -43,6 +59,11 @@ export default function Backtest({ user }) {
   const [sweepData, setSweepData] = useState(null);
   const [compareData, setCompareData] = useState(null);
   const [sweepMetric, setSweepMetric] = useState('total_return_pct');
+  const [sweepProgress, setSweepProgress] = useState(null); // { completed, total, status }
+  // Bumped whenever a new sweep starts (or the tab unmounts) so a poll loop
+  // from an earlier sweep notices it is stale and stops touching state.
+  const sweepRun = useRef(0);
+  const sweepIdRef = useRef(null);
   const [validation, setValidation] = useState(null);
   const [validating, setValidating] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -84,6 +105,55 @@ export default function Backtest({ user }) {
     setLoading(false);
   };
 
+  // Poll one sweep until it reaches a terminal state, painting the heatmap on
+  // every tick. Resolves to 'done' | 'expired' | 'error' | 'stale' — 'stale'
+  // means a newer sweep took over and this loop must not touch state again.
+  // sweepIdRef holds the id only while the sweep is in flight.
+  const pollSweep = async (id) => {
+    const run = ++sweepRun.current;
+    const live = () => sweepRun.current === run;
+    sweepIdRef.current = id;
+    let outcome = 'done';
+    try {
+      for (;;) {
+        const res = await fetch(`${API}/sweeps/${id}`);
+        if (!live()) return 'stale';
+        if (res.status === 404) { outcome = 'expired'; break; }
+        if (!res.ok) throw new Error(`sweep ${res.status}`);
+        const state = await res.json();
+        if (!live()) return 'stale';
+        setSweepData(sweepStateToData(state));
+        setSweepProgress({ completed: state.completed, total: state.total, status: state.status });
+        if (SWEEP_TERMINAL.has(state.status)) {
+          if (state.status === 'failed') setError(state.error || 'Sweep failed');
+          break;
+        }
+        await sleep(SWEEP_POLL_MS);
+        if (!live()) return 'stale';
+      }
+    } catch (e) {
+      if (!live()) return 'stale';
+      setError('Lost contact with the sweep. Is your backend running?');
+      outcome = 'error';
+    }
+    sweepIdRef.current = null;
+    setLoading(false);
+    return outcome;
+  };
+
+  // Ask the backend to stop the in-flight sweep, if there is one. Used by the
+  // CANCEL button and when a new sweep supersedes a running one, so a
+  // re-click doesn't leave an orphaned job burning the rest of its grid.
+  const cancelSweep = async () => {
+    const id = sweepIdRef.current;
+    if (!id) return;
+    try {
+      await fetch(`${API}/sweeps/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      // The poll loop reports connectivity problems; nothing extra to say.
+    }
+  };
+
   const runSweep = async (opts = {}) => {
     const tk = (opts.ticker ?? ticker).toUpperCase();
     const per = opts.period ?? period;
@@ -91,22 +161,43 @@ export default function Backtest({ user }) {
     if (!tk) return;
     setLoading(true);
     setError(null);
+    setValidation(null); // stale validation belongs to the previous sweep
+    cancelSweep(); // supersede any sweep still running; no need to await it
+    let started;
     try {
-      const res = await fetch(`${API}/sweep/${tk}?period=${per}&strategy=${strat}`);
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
-        setSweepData(null);
-      } else {
-        setSweepData(data);
-        setValidation(null); // stale validation belongs to the previous sweep
-        syncUrl({ ticker: tk, period: per, strategy: strat, mode: 'sweep' });
-      }
+      const res = await fetch(`${API}/sweeps/${tk}?period=${per}&strategy=${strat}`, { method: 'POST' });
+      started = await res.json();
     } catch (e) {
       setError('Failed to run sweep. Is your backend running?');
+      setLoading(false);
+      return;
     }
-    setLoading(false);
+    if (started.error || !started.sweep_id) {
+      setError(started.error || 'Failed to start sweep.');
+      setSweepData(null);
+      setLoading(false);
+      return;
+    }
+    setSweepData(null);
+    setSweepProgress({ completed: 0, total: started.total, status: started.status });
+    syncUrl({ ticker: tk, period: per, strategy: strat, mode: 'sweep', sweep: started.sweep_id });
+    if ((await pollSweep(started.sweep_id)) === 'expired') {
+      setError('That sweep has expired. Run it again.');
+    }
   };
+
+  // A refreshed or shared URL carries the sweep id: reattach to the running
+  // (or finished) sweep instead of starting over — unless the backend has
+  // already forgotten it, in which case start a fresh one with the same inputs.
+  const resumeSweep = async (id, params) => {
+    setLoading(true);
+    setError(null);
+    if ((await pollSweep(id)) === 'expired') runSweep(params);
+  };
+
+  // Stop polling when the tab unmounts; the sweep itself keeps running on
+  // the backend and the URL still points at it.
+  useEffect(() => () => { sweepRun.current += 1; }, []);
 
   // Race all four strategies on the same ticker and window.
   const runCompare = async (opts = {}) => {
@@ -236,7 +327,12 @@ export default function Backtest({ user }) {
     setMode(md);
     if (b != null) setBuyRsi(b);
     if (s != null) setSellRsi(s);
-    if (md === 'sweep') runSweep({ ticker: tk, period: per, strategy: strat });
+    if (md === 'sweep') {
+      const sweepParams = { ticker: tk, period: per, strategy: strat };
+      const sid = p.get('sweep');
+      if (sid) resumeSweep(sid, sweepParams);
+      else runSweep(sweepParams);
+    }
     else if (md === 'compare') runCompare({ ticker: tk, period: per, buyRsi: b ?? 30, sellRsi: s ?? 70 });
     else run({ ticker: tk, period: per, strategy: strat, buyRsi: b ?? 30, sellRsi: s ?? 70 });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -381,9 +477,24 @@ export default function Backtest({ user }) {
             style={{ backgroundColor: 'var(--color-accent)', color: '#fff' }}
           >
             {loading
-              ? { single: 'RUNNING BACKTEST...', sweep: 'RUNNING SWEEP...', compare: 'COMPARING STRATEGIES...' }[mode]
+              ? {
+                  single: 'RUNNING BACKTEST...',
+                  sweep: sweepProgress && sweepProgress.total
+                    ? `RUNNING SWEEP... ${sweepProgress.completed} / ${sweepProgress.total}`
+                    : 'RUNNING SWEEP...',
+                  compare: 'COMPARING STRATEGIES...',
+                }[mode]
               : { single: 'RUN BACKTEST', sweep: 'RUN SWEEP', compare: 'COMPARE ALL STRATEGIES' }[mode]}
           </button>
+          {mode === 'sweep' && loading && sweepProgress && (
+            <button
+              onClick={cancelSweep}
+              className="px-4 py-3 font-mono text-sm"
+              style={{ border: '1px solid var(--color-divider)', color: 'var(--color-muted)' }}
+            >
+              CANCEL
+            </button>
+          )}
           {mode === 'single' && results && user && (
             <button
               onClick={saveRun}
@@ -430,9 +541,9 @@ export default function Backtest({ user }) {
               </button>
             ))}
           </div>
-          <SweepHeatmap data={sweepData} metric={sweepMetric} onSelect={selectCell} />
+          <SweepHeatmap data={sweepData} metric={sweepMetric} progress={sweepProgress} onSelect={selectCell} />
 
-          {!validation && (
+          {!validation && !loading && (
             <button
               onClick={runValidation}
               disabled={validating}

@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from typing import Optional
-from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest, run_sweep, run_validation, run_compare
+from app.services.market_data import get_multiple_prices, get_history, get_quote, get_indicators, get_signals, scan_tickers, run_backtest, run_sweep, run_sweep_stored, run_validation, run_compare
+from app.services.sweep_store import get_store
 
 router = APIRouter()
 
@@ -115,6 +116,67 @@ def sweep(
     if len(buy_values) * len(sell_values) > MAX_SWEEP_CELLS:
         return {"error": f"Sweep grid too large (max {MAX_SWEEP_CELLS} cells)"}
     return run_sweep(ticker.upper(), period, strategy, buy_values, sell_values)
+
+# Async sweeps: POST starts the grid in a background task and returns a
+# sweep_id; the UI polls GET /sweeps/{sweep_id} for progress (completed/total,
+# live best) and can DELETE to cancel. Unlike GET /sweep/{ticker}, progress
+# survives a page refresh — and with Redis configured, a process restart too.
+@router.post("/sweeps/{ticker}")
+def sweep_start(
+    ticker: str,
+    background_tasks: BackgroundTasks,
+    period: str = "2y",
+    strategy: str = "rsi",
+    buy_min: float = 20,
+    buy_max: float = 40,
+    buy_step: float = 5,
+    sell_min: float = 60,
+    sell_max: float = 80,
+    sell_step: float = 5,
+):
+    buy_values = _frange(buy_min, buy_max, buy_step)
+    sell_values = _frange(sell_min, sell_max, sell_step)
+    if not buy_values or not sell_values:
+        return {"error": "Invalid sweep range"}
+    if len(buy_values) * len(sell_values) > MAX_SWEEP_CELLS:
+        return {"error": f"Sweep grid too large (max {MAX_SWEEP_CELLS} cells)"}
+    if strategy not in ("rsi", "combined"):
+        return {"error": f"Sweep is only supported for rsi and combined strategies, not {strategy}"}
+
+    store = get_store()
+    total = len(buy_values) * len(sell_values)
+    sweep_id = store.create(
+        {
+            "ticker": ticker.upper(),
+            "period": period,
+            "strategy": strategy,
+            "buy_values": buy_values,
+            "sell_values": sell_values,
+        },
+        total=total,
+    )
+    background_tasks.add_task(
+        run_sweep_stored, store, sweep_id, ticker.upper(), period, strategy,
+        buy_values, sell_values,
+    )
+    return {"sweep_id": sweep_id, "status": "pending", "total": total}
+
+@router.get("/sweeps/{sweep_id}")
+def sweep_status(sweep_id: str):
+    state = get_store().get(sweep_id)
+    if state is None:
+        raise HTTPException(status_code=404, detail="Unknown or expired sweep")
+    return state
+
+@router.delete("/sweeps/{sweep_id}")
+def sweep_cancel(sweep_id: str):
+    store = get_store()
+    if store.get(sweep_id) is None:
+        raise HTTPException(status_code=404, detail="Unknown or expired sweep")
+    # No-op on an already-terminal sweep; the worker notices the cancelled
+    # status between cells and stops early.
+    store.set_status(sweep_id, "cancelled")
+    return store.get(sweep_id)
 
 @router.get("/validate/{ticker}")
 def validate(

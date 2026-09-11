@@ -38,13 +38,25 @@ const METRIC_LABEL = {
   win_rate_pct: 'WIN RATE',
 };
 
-export default function SweepHeatmap({ data, metric, onSelect }) {
+const STATUS_LABEL = {
+  pending: 'STARTING',
+  running: 'RUNNING',
+  cancelled: 'CANCELLED',
+  failed: 'FAILED',
+};
+
+// `progress` ({ completed, total, status }) is present while a sweep is
+// polled from the backend; cells not yet in `grid` render as pending.
+// Without it (a finished sweep with every cell present) nothing changes.
+export default function SweepHeatmap({ data, metric, progress, onSelect }) {
   const [hover, setHover] = useState(null);
   if (!data || !data.grid) return null;
 
   const { buy_values, sell_values, grid, best } = data;
   const cellAt = (b, s) => grid.find(c => c.buy_rsi === b && c.sell_rsi === s);
 
+  // Colors are normalized to the cells seen so far, so the ramp settles as
+  // the grid fills in — the same rule as a finished grid, applied early.
   const vals = grid.map(c => c[metric]).filter(v => v != null);
   const min = Math.min(...vals);
   const max = Math.max(...vals);
@@ -57,15 +69,48 @@ export default function SweepHeatmap({ data, metric, onSelect }) {
   };
 
   const detail = hover || best;
+  const inFlight = progress && (progress.status === 'pending' || progress.status === 'running');
+  const showProgress = progress && progress.total && progress.status !== 'done';
+  const pct = showProgress ? Math.round((progress.completed / progress.total) * 100) : 100;
 
   return (
     <div className="p-4 mb-4" style={{ border: '1px solid var(--color-divider)' }}>
-      <p className="font-mono text-xs mb-1 tracking-widest" style={{ color: 'var(--color-muted)' }}>
-        PARAMETER SWEEP — {METRIC_LABEL[metric]}
-      </p>
-      <p className="font-mono text-xs mb-4" style={{ color: 'var(--color-muted)' }}>
+      <div className="flex items-center justify-between gap-4 mb-1">
+        <p className="font-mono text-xs tracking-widest" style={{ color: 'var(--color-muted)' }}>
+          PARAMETER SWEEP — {METRIC_LABEL[metric]}
+        </p>
+        {showProgress && (
+          <p
+            className="font-mono text-xs tracking-widest"
+            style={{ color: inFlight ? 'var(--color-accent)' : 'var(--color-muted)' }}
+            aria-live="polite"
+          >
+            {STATUS_LABEL[progress.status] || progress.status.toUpperCase()} · {progress.completed} / {progress.total}
+          </p>
+        )}
+      </div>
+      <p className="font-mono text-xs mb-3" style={{ color: 'var(--color-muted)' }}>
         BUY RSI → (columns) · SELL RSI ↓ (rows) · click a cell to backtest it
       </p>
+      {showProgress && (
+        <div
+          className="mb-3"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={progress.total}
+          aria-valuenow={progress.completed}
+          style={{ height: '2px', backgroundColor: 'var(--color-hairline)' }}
+        >
+          <div
+            style={{
+              height: '100%',
+              width: `${pct}%`,
+              backgroundColor: inFlight ? 'var(--color-accent)' : 'var(--color-muted)',
+              transition: 'width 200ms linear',
+            }}
+          />
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <div
@@ -119,8 +164,23 @@ function FragmentRow({ s, buy_values, cellAt, metric, bg, best, onSelect, setHov
       <div className="font-mono text-xs flex items-center justify-end pr-1" style={{ color: 'var(--color-muted)' }}>{s}</div>
       {buy_values.map(b => {
         const cell = cellAt(b, s);
-        const v = cell ? cell[metric] : null;
-        const isBest = best && cell && cell.buy_rsi === best.buy_rsi && cell.sell_rsi === best.sell_rsi;
+        // A missing cell hasn't been computed yet (sweep still running or
+        // cancelled early); a present cell with a null metric never traded.
+        if (!cell) {
+          return (
+            <div
+              key={`${b}-${s}`}
+              data-pending="true"
+              aria-label={`BUY<${b} / SELL>${s} pending`}
+              className="font-mono text-xs text-center py-2"
+              style={{ color: 'var(--color-muted)', border: '1px dashed var(--color-hairline)' }}
+            >
+              ·
+            </div>
+          );
+        }
+        const v = cell[metric];
+        const isBest = best && cell.buy_rsi === best.buy_rsi && cell.sell_rsi === best.sell_rsi;
         return (
           <button
             key={`${b}-${s}`}

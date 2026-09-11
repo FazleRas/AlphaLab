@@ -1,8 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import App from './App';
 
-test('renders learn react link', () => {
+test('renders the header and the four tabs', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  expect(screen.getByText('ALPHALAB')).toBeInTheDocument();
+  for (const tab of ['dashboard', 'scanner', 'backtest', 'watchlist']) {
+    expect(screen.getByRole('button', { name: tab })).toBeInTheDocument();
+  }
 });

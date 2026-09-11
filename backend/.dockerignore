@@ -1,0 +1,11 @@
+# .gitignore does not apply to Docker build contexts: without this file,
+# `COPY . .` ships the local virtualenv (~150 MB) and, on any box where
+# backend/.env exists, a copy of the secrets into an image layer.
+.venv/
+venv/
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+tests/
+test_db.py
