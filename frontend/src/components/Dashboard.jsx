@@ -5,6 +5,7 @@ import AnimatedNumber from './AnimatedNumber';
 import { QuoteSkeleton, ExampleCardSkeleton } from './Skeleton';
 import useColdStartHint from '../hooks/useColdStartHint';
 import useRecentTickers from '../hooks/useRecentTickers';
+import { nyseOpen } from './Tape';
 import API from '../config';
 
 // Offered on the empty dashboard so the first thing on screen is a market,
@@ -19,6 +20,46 @@ const LABEL = { fontSize: '10.5px', letterSpacing: '0.16em', color: 'var(--color
 const fixed2 = (v) => Number(v).toFixed(2);
 const money = (v) => `$${fixed2(v)}`;
 const signed2 = (v) => `${v >= 0 ? '+' : ''}${fixed2(v)}`;
+const compact = (v) => {
+  const a = Math.abs(v);
+  if (a >= 1e12) return `${(v / 1e12).toFixed(2)}T`;
+  if (a >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+  if (a >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (a >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
+  return fixed2(v);
+};
+// Quotes refresh on this cadence while the session is open; the backend
+// caches them for the same minute.
+const LIVE_MS = 60_000;
+
+// Where today sits in the year: the 52-week span as a track, the day's
+// range as a thicker segment, the last price as a tick.
+const RangeBar = ({ low, high, dayLow, dayHigh, price, color }) => {
+  if (low == null || high == null || price == null || high <= low) return null;
+  const pct = (v) => Math.min(100, Math.max(0, ((v - low) / (high - low)) * 100));
+  const hasDay = dayLow != null && dayHigh != null;
+  return (
+    <div className="mt-5">
+      <div className="flex justify-between mb-1" style={LABEL}>
+        <span>52W LOW {money(low)}</span>
+        <span>52W HIGH {money(high)}</span>
+      </div>
+      <div style={{ position: 'relative', height: 6, background: 'var(--color-hairline)' }}>
+        {hasDay && (
+          <div
+            title={`Day range ${money(dayLow)} – ${money(dayHigh)}`}
+            style={{
+              position: 'absolute', top: 0, bottom: 0,
+              left: `${pct(dayLow)}%`, width: `${Math.max(0.6, pct(dayHigh) - pct(dayLow))}%`,
+              background: 'var(--color-muted)',
+            }}
+          />
+        )}
+        <div style={{ position: 'absolute', top: -3, width: 2, height: 12, left: `calc(${pct(price)}% - 1px)`, background: color }} />
+      </div>
+    </div>
+  );
+};
 
 const StatCard = ({ label, value, format = fixed2, color }) => (
   <div className="p-3" style={{ backgroundColor: 'var(--color-bg)', border: '1px solid var(--color-divider)' }}>
@@ -85,6 +126,7 @@ export default function Dashboard() {
   const [error, setError] = useState(null);
   const waking = useColdStartHint(loading);
   const [recent, addRecent] = useRecentTickers();
+  const [live, setLive] = useState(() => nyseOpen());
 
   // Example cards for the empty state. null = not loaded, [] = gave up.
   const [examples, setExamples] = useState(null);
@@ -100,6 +142,34 @@ export default function Dashboard() {
       .finally(() => { if (live) setExamplesLoading(false); });
     return () => { live = false; };
   }, []);
+
+  // A shared or palette link carries the symbol: search it on mount.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('ticker');
+    if (t) search(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // While NYSE is open, pull a fresh quote each minute. The numbers tween
+  // and flash on their own when they move; nothing else re-fetches.
+  useEffect(() => {
+    if (!quote?.ticker) return undefined;
+    const tick = async () => {
+      const open = nyseOpen();
+      setLive(open);
+      if (!open) return;
+      try {
+        const res = await fetch(`${API}/quote/${quote.ticker}`);
+        if (!res.ok) return;
+        const d = await res.json();
+        setQuote(prev => (prev?.ticker === d.ticker ? { ticker: d.ticker, ...d.quote } : prev));
+      } catch (e) {
+        // Keep the last quote on screen.
+      }
+    };
+    const id = setInterval(tick, LIVE_MS);
+    return () => clearInterval(id);
+  }, [quote?.ticker]);
 
   // A non-ok response means the backend IS up but a request failed. 404
   // (unknown ticker) and 503 (upstream rate limit) carry a human-readable
@@ -119,6 +189,10 @@ export default function Dashboard() {
     setTicker(sym);
     setLoading(true);
     setError(null);
+    const params = new URLSearchParams(window.location.search);
+    params.set('view', 'dashboard');
+    params.set('ticker', sym);
+    window.history.replaceState(null, '', `?${params.toString()}`);
     try {
       const [quoteRes, signalsRes] = await Promise.all([
         fetch(`${API}/quote/${sym}`),
@@ -162,6 +236,7 @@ export default function Dashboard() {
           onChange={e => setTicker(e.target.value.toUpperCase())}
           onKeyDown={e => e.key === 'Enter' && search()}
           placeholder="Enter ticker: AAPL, NVDA..."
+          data-search
           className="flex-1 px-4 py-3 font-mono text-sm outline-none"
           style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-divider)', color: 'var(--color-text)' }}
         />
@@ -220,7 +295,14 @@ export default function Dashboard() {
           <div className="p-5 mb-4" style={{ border: `1px solid ${dirColor}` }}>
             <div className="flex items-start justify-between gap-6">
               <div>
-                <p className="font-mono text-xs tracking-widest mb-1" style={{ color: 'var(--color-muted)' }}>{quote.ticker}</p>
+                <p className="font-mono text-xs tracking-widest mb-1 flex items-center gap-3" style={{ color: 'var(--color-muted)' }}>
+                  {quote.ticker}
+                  {live && (
+                    <span className="inline-flex items-center gap-2" title="Quote refreshes every minute while NYSE is open">
+                      <span className="tape__dot tape__dot--live" aria-hidden="true" />LIVE
+                    </span>
+                  )}
+                </p>
                 <p className="font-mono text-4xl" style={{ color: 'var(--color-text)' }}>
                   <AnimatedNumber value={quote.price} format={money} />
                 </p>
@@ -240,13 +322,23 @@ export default function Dashboard() {
                 </p>
               </div>
             </div>
+            <RangeBar
+              low={quote.year_low}
+              high={quote.year_high}
+              dayLow={quote.day_low}
+              dayHigh={quote.day_high}
+              price={quote.price}
+              color={dirColor}
+            />
           </div>
 
           {/* Stats */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-6">
             <StatCard label="OPEN" value={quote.open} format={money} />
             <StatCard label="DAY HIGH" value={quote.day_high} format={money} />
             <StatCard label="DAY LOW" value={quote.day_low} format={money} />
+            <StatCard label="VOLUME" value={quote.volume} format={compact} />
+            <StatCard label="MKT CAP" value={quote.market_cap} format={v => `$${compact(v)}`} />
             <StatCard label="P/E RATIO" value={quote.pe_ratio} />
           </div>
 

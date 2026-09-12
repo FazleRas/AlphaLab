@@ -102,6 +102,8 @@ def _fallback_quote(stock, ticker: str):
         "volume": _fast_attr(fi, "last_volume", decimals=0),
         "market_cap": _fast_attr(fi, "market_cap", decimals=0),
         "pe_ratio": None,
+        "year_high": _fast_attr(fi, "year_high"),
+        "year_low": _fast_attr(fi, "year_low"),
     }
 
 def _fetch_quote(ticker: str):
@@ -141,6 +143,8 @@ def _fetch_quote(ticker: str):
         "volume": info.get("volume") or info.get("regularMarketVolume"),
         "market_cap": info.get("marketCap"),
         "pe_ratio": info.get("trailingPE"),
+        "year_high": info.get("fiftyTwoWeekHigh"),
+        "year_low": info.get("fiftyTwoWeekLow"),
     }
 
 def get_quote(ticker: str):
