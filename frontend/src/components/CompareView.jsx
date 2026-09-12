@@ -8,6 +8,7 @@ import {
   legendWrapperStyle,
   legendLabelStyle,
 } from '../chartTheme';
+import Sparkline from './Sparkline';
 
 const STRATEGY_META = {
   rsi: { label: 'RSI', color: PEER_SERIES.rsi },
@@ -25,6 +26,7 @@ const sharpeColor = (s) => {
 };
 
 const fmtPct = (v) => (v == null ? '—' : `${v > 0 ? '+' : ''}${v}%`);
+const ANIM = { isAnimationActive: true, animationDuration: 800, animationEasing: 'ease-out' };
 
 // Merge sparse per-strategy equity curves and the daily buy & hold curve onto
 // one time axis; recharts connects the gaps per series via connectNulls.
@@ -45,6 +47,9 @@ const buildRows = (data) => {
 export default function CompareView({ data }) {
   // Declared before the early return so hook order stays stable.
   const [hidden, setHidden] = useState({});
+  // Series under the pointer in the table; it comes forward on the chart
+  // and the others step back.
+  const [active, setActive] = useState(null);
 
   const rows = useMemo(() => (data && data.strategies ? buildRows(data) : []), [data]);
   const formatDate = useMemo(() => makeDateFormatter(rows.map(r => r.time)), [rows]);
@@ -65,6 +70,16 @@ export default function CompareView({ data }) {
     const key = legendDataKey(entry);
     return <span style={legendLabelStyle(!!hidden[key])}>{value}</span>;
   };
+
+  const emphasis = (key, base) => ({
+    strokeWidth: active === key ? base + 1 : base,
+    strokeOpacity: active && active !== key ? 0.2 : 1,
+  });
+  const rowProps = (key) => ({
+    className: `cmp-row${active === key ? ' cmp-row--active' : ''}`,
+    onMouseEnter: () => setActive(key),
+    onMouseLeave: () => setActive(null),
+  });
 
   return (
     <>
@@ -109,13 +124,13 @@ export default function CompareView({ data }) {
               dataKey="buyHold"
               name="BUY & HOLD"
               stroke={SERIES.overlay1}
-              strokeWidth={1}
               strokeDasharray="4 4"
               dot={false}
               connectNulls
               legendType="square"
               hide={!!hidden.buyHold}
-              isAnimationActive={false}
+              {...emphasis('buyHold', 1)}
+              {...ANIM}
             />
             {/* Unlike the other charts, the strategies here are peers being
                 compared against each other rather than overlays on one subject,
@@ -128,12 +143,12 @@ export default function CompareView({ data }) {
                   dataKey={s.strategy}
                   name={STRATEGY_META[s.strategy].label}
                   stroke={STRATEGY_META[s.strategy].color}
-                  strokeWidth={1.5}
                   dot={false}
                   connectNulls
                   legendType="square"
                   hide={!!hidden[s.strategy]}
-                  isAnimationActive={false}
+                  {...emphasis(s.strategy, 1.5)}
+                  {...ANIM}
                 />
               )
             ))}
@@ -148,6 +163,7 @@ export default function CompareView({ data }) {
             <thead>
               <tr style={{ color: 'var(--color-muted)', textAlign: 'right' }}>
                 <th className="py-2 pr-4" style={{ textAlign: 'left' }}>STRATEGY</th>
+                <th className="py-2 px-3" style={{ textAlign: 'left' }}>CURVE</th>
                 <th className="py-2 px-3">RETURN</th>
                 <th className="py-2 px-3">CAGR</th>
                 <th className="py-2 px-3">SHARPE</th>
@@ -158,9 +174,12 @@ export default function CompareView({ data }) {
             </thead>
             <tbody style={{ textAlign: 'right' }}>
               {ranked.map(s => (
-                <tr key={s.strategy} style={{ borderTop: '1px solid var(--color-hairline)' }}>
+                <tr key={s.strategy} style={{ borderTop: '1px solid var(--color-hairline)' }} {...rowProps(s.strategy)}>
                   <td className="py-2 pr-4" style={{ textAlign: 'left', color: STRATEGY_META[s.strategy].color }}>
                     {STRATEGY_META[s.strategy].label}
+                  </td>
+                  <td className="py-1 px-3" style={{ textAlign: 'left' }}>
+                    <Sparkline data={s.equity_curve.map(p => p.equity)} width={80} height={20} color={STRATEGY_META[s.strategy].color} fill={false} animate={false} />
                   </td>
                   <td className="py-2 px-3" style={{ color: s.total_return_pct == null ? 'var(--color-muted)' : s.total_return_pct > 0 ? 'var(--color-pos)' : 'var(--color-neg)' }}>
                     {s.total_return_pct == null ? 'NO TRADES' : fmtPct(s.total_return_pct)}
@@ -172,8 +191,11 @@ export default function CompareView({ data }) {
                   <td className="py-2 pl-3" style={{ color: 'var(--color-text)' }}>{s.num_trades ?? '—'}</td>
                 </tr>
               ))}
-              <tr style={{ borderTop: '1px solid var(--color-hairline)' }}>
+              <tr style={{ borderTop: '1px solid var(--color-hairline)' }} {...rowProps('buyHold')}>
                 <td className="py-2 pr-4" style={{ textAlign: 'left', color: 'var(--color-muted)' }}>BUY &amp; HOLD</td>
+                <td className="py-1 px-3" style={{ textAlign: 'left' }}>
+                  <Sparkline data={data.buy_hold_curve.map(p => p.equity)} width={80} height={20} color={SERIES.overlay1} fill={false} animate={false} />
+                </td>
                 <td className="py-2 px-3" style={{ color: data.buy_hold_return_pct > 0 ? 'var(--color-pos)' : 'var(--color-neg)' }}>
                   {fmtPct(data.buy_hold_return_pct)}
                 </td>

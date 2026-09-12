@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Moon, Sun } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import Scanner from './components/Scanner';
@@ -8,6 +8,9 @@ import Auth from './components/Auth';
 import ErrorBoundary from './components/ErrorBoundary';
 import Logo from './components/Logo';
 import Tape from './components/Tape';
+import Palette from './components/Palette';
+import useRecentTickers from './hooks/useRecentTickers';
+import { inField } from './nav';
 import useAuth from './hooks/useAuth';
 import { supabase, isSupabaseConfigured } from './supabaseClient';
 
@@ -62,11 +65,11 @@ function ThemeToggle({ theme, onToggle }) {
 function AuthStatus({ user }) {
   if (!isSupabaseConfigured) return null;
   if (!user) {
-    return <span style={labelStyle}>NOT SIGNED IN</span>;
+    return <span className="sm-hide" style={labelStyle}>NOT SIGNED IN</span>;
   }
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-      <span style={labelStyle}>{user.email}</span>
+      <span className="sm-hide" style={labelStyle}>{user.email}</span>
       <button onClick={() => supabase.auth.signOut()} className="btn-ghost btn-ghost--sm">
         SIGN OUT
       </button>
@@ -94,7 +97,12 @@ function WatchlistTab({ user, loading }) {
 function App() {
   const [activeTab, setActiveTab] = useState(getInitialTab);
   const [theme, setTheme] = useState(getInitialTheme);
+  // Bumped when a tab is asked to reload with new params while already open.
+  const [viewKey, setViewKey] = useState(0);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const { user, loading } = useAuth();
+  const [recent] = useRecentTickers();
+  const toggleTheme = useCallback(() => setTheme(t => (t === 'dark' ? 'light' : 'dark')), []);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -105,12 +113,44 @@ function App() {
     }
   }, [theme]);
 
-  const selectTab = (tab) => {
+  const selectTab = useCallback((tab) => {
     setActiveTab(tab);
     const params = new URLSearchParams(window.location.search);
     params.set('view', tab);
     window.history.replaceState(null, '', `?${params.toString()}`);
-  };
+  }, []);
+
+  // goTo() in nav.js has already written the query string; switch tabs and
+  // remount so the target reads it even when it is the current tab.
+  useEffect(() => {
+    const onView = (e) => {
+      if (TABS.includes(e.detail)) setActiveTab(e.detail);
+      setViewKey(k => k + 1);
+    };
+    window.addEventListener('alphalab:view', onView);
+    return () => window.removeEventListener('alphalab:view', onView);
+  }, []);
+
+  // Global keys. Anything typed into a field stays in the field; the palette
+  // handles its own keys while open.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(o => !o);
+        return;
+      }
+      if (paletteOpen || inField(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === '/') {
+        e.preventDefault();
+        document.querySelector('[data-search]')?.focus();
+      } else if (e.key >= '1' && e.key <= '4') {
+        selectTab(TABS[Number(e.key) - 1]);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [paletteOpen, selectTab]);
 
   return (
     <div style={{ minHeight: '100vh', backgroundColor: 'var(--color-bg)', color: 'var(--color-text)' }}>
@@ -135,12 +175,14 @@ function App() {
           <Logo size={20} />
           <span style={{ fontSize: '13px', letterSpacing: '0.3em' }}>ALPHALAB</span>
         </span>
-        <span style={{ ...labelStyle, marginRight: 'auto' }}>{APP_VERSION.toUpperCase()}</span>
+        <span className="sm-hide" style={labelStyle}>{APP_VERSION.toUpperCase()}</span>
+        <span style={{ marginRight: 'auto' }} />
         <AuthStatus user={user} />
-        <ThemeToggle theme={theme} onToggle={() => setTheme(t => (t === 'dark' ? 'light' : 'dark'))} />
+        <ThemeToggle theme={theme} onToggle={toggleTheme} />
       </header>
 
       <nav
+        className="nav"
         style={{
           display: 'flex',
           maxWidth: PAGE_WIDTH,
@@ -153,9 +195,9 @@ function App() {
           <button
             key={tab}
             onClick={() => selectTab(tab)}
+            className="nav__tab"
             style={{
               padding: '12px 0',
-              marginRight: '26px',
               background: 'none',
               border: 0,
               borderBottom: '1px solid transparent',
@@ -180,7 +222,7 @@ function App() {
       <main style={{ maxWidth: PAGE_WIDTH, margin: '0 auto', padding: '28px 20px 80px' }}>
         {/* key resets the boundary when switching tabs, so a crash in one
             tab never blocks the others */}
-        <ErrorBoundary key={activeTab}>
+        <ErrorBoundary key={`${activeTab}:${viewKey}`}>
           <div className="fade-up">
             {activeTab === 'dashboard' && <Dashboard />}
             {activeTab === 'scanner' && <Scanner />}
@@ -189,6 +231,14 @@ function App() {
           </div>
         </ErrorBoundary>
       </main>
+
+      <Palette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onSelectTab={selectTab}
+        onToggleTheme={toggleTheme}
+        recent={recent}
+      />
     </div>
   );
 }

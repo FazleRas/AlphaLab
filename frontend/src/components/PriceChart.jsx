@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import API from '../config';
 import { ChartSkeleton } from './Skeleton';
+import { inField } from '../nav';
 import {
   SERIES,
   makeDateFormatter,
@@ -50,11 +51,17 @@ const rsiColor = (v) => (v == null ? 'var(--color-muted)' : v > 70 ? 'var(--colo
 const upDay = (row) => row.close >= (row.open ?? row.close);
 const dirColor = (row) => (upDay(row) ? 'var(--color-pos)' : 'var(--color-neg)');
 
+const CHART_TYPES = [
+  { key: 'line', label: 'LINE' },
+  { key: 'candles', label: 'CANDLES' },
+  { key: 'spy', label: 'VS SPY' },
+];
+
 const readPrefs = () => {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
     return {
-      chartType: p.chartType === 'candles' ? 'candles' : 'line',
+      chartType: CHART_TYPES.some(t => t.key === p.chartType) ? p.chartType : 'line',
       panes: { vol: true, rsi: true, macd: false, ...(p.panes || {}) },
     };
   } catch (e) {
@@ -72,6 +79,20 @@ const merge = (indicators, history) => {
     return h
       ? { ...row, open: h.open, high: h.high, low: h.low, volume: h.volume, range: [h.low, h.high] }
       : { ...row, range: null };
+  });
+};
+
+// Relative strength: both series rebased to 100 at the first date they share,
+// so the gap between the lines is the ticker's lead over the index.
+const withRelative = (rows, spyRows) => {
+  if (!spyRows || !spyRows.length) return rows;
+  const spyByDate = new Map(spyRows.map(h => [h.date, h.close]));
+  let base = null;
+  return rows.map(row => {
+    const spy = spyByDate.get(row.date);
+    if (spy == null || row.close == null) return row;
+    if (!base) base = { close: row.close, spy };
+    return { ...row, rel: (row.close / base.close) * 100, spyRel: (spy / base.spy) * 100 };
   });
 };
 
@@ -108,7 +129,7 @@ const Muted = ({ children }) => <span style={{ color: 'var(--color-muted)' }}>{c
 
 // One tooltip for every pane: the panes render only a cursor line and lean on
 // this, which reads the whole merged row.
-const PriceTooltip = ({ active, payload, label, first, formatDate, chartType, panes, hidden }) => {
+const PriceTooltip = ({ active, payload, label, first, formatDate, chartType, panes, hidden, ticker }) => {
   if (!active || !payload || !payload.length) return null;
   const row = payload[0].payload;
   const pct = first ? ((row.close - first) / first) * 100 : null;
@@ -117,7 +138,19 @@ const PriceTooltip = ({ active, payload, label, first, formatDate, chartType, pa
   return (
     <div style={tooltipBoxStyle}>
       <p style={{ ...LABEL_STYLE, margin: '0 0 6px' }}>{formatDate(label)}</p>
-      {chartType === 'candles' && row.open != null ? (
+      {chartType === 'spy' ? (
+        <>
+          <Row label={ticker} color={SERIES.primary}>{fix(row.rel, 1)} <Muted>({fix(row.close)})</Muted></Row>
+          <Row label="SPY" color={SERIES.overlay1}>{fix(row.spyRel, 1)}</Row>
+          {row.rel != null && row.spyRel != null && (
+            <Row label="SPREAD">
+              <span style={{ color: row.rel - row.spyRel >= 0 ? 'var(--color-pos)' : 'var(--color-neg)' }}>
+                {row.rel - row.spyRel >= 0 ? '+' : ''}{(row.rel - row.spyRel).toFixed(1)} PTS
+              </span>
+            </Row>
+          )}
+        </>
+      ) : chartType === 'candles' && row.open != null ? (
         <>
           <Row label="OPEN">${fix(row.open)}</Row>
           <Row label="HIGH">${fix(row.high)}</Row>
@@ -129,8 +162,8 @@ const PriceTooltip = ({ active, payload, label, first, formatDate, chartType, pa
           <Row label="CLOSE" color={SERIES.primary}>${fix(row.close)} <Muted>{pctText}</Muted></Row>
         )
       )}
-      {!hidden.sma_20 && row.sma_20 != null && <Row label="SMA20" color={SERIES.overlay1}>${fix(row.sma_20)}</Row>}
-      {!hidden.sma_50 && row.sma_50 != null && <Row label="SMA50" color={SERIES.overlay2}>${fix(row.sma_50)}</Row>}
+      {chartType !== 'spy' && !hidden.sma_20 && row.sma_20 != null && <Row label="SMA20" color={SERIES.overlay1}>${fix(row.sma_20)}</Row>}
+      {chartType !== 'spy' && !hidden.sma_50 && row.sma_50 != null && <Row label="SMA50" color={SERIES.overlay2}>${fix(row.sma_50)}</Row>}
       {anyPane && <div style={{ borderTop: '1px solid var(--color-hairline)', margin: '6px 0' }} />}
       {panes.vol && row.volume != null && <Row label="VOL">{compact(row.volume)}</Row>}
       {panes.rsi && row.rsi != null && <Row label="RSI"><span style={{ color: rsiColor(row.rsi) }}>{fix(row.rsi)}</span></Row>}
@@ -143,7 +176,7 @@ const PriceTooltip = ({ active, payload, label, first, formatDate, chartType, pa
 
 // Header readout for the row under the cursor (or the latest row), the way a
 // terminal prints O/H/L/C above the chart.
-const Readout = ({ row, chartType }) => {
+const Readout = ({ row, chartType, ticker }) => {
   if (!row) return null;
   const V = ({ k, v, color }) => (
     <span style={{ marginRight: 14, whiteSpace: 'nowrap' }}>
@@ -151,17 +184,27 @@ const Readout = ({ row, chartType }) => {
       <span style={{ color: color || 'var(--color-text)' }}>{v}</span>
     </span>
   );
+  if (chartType === 'spy') {
+    const spread = row.rel != null && row.spyRel != null ? row.rel - row.spyRel : null;
+    return (
+      <span className="readout font-mono text-xs">
+        <V k={ticker} v={fix(row.rel, 1)} /><V k="SPY" v={fix(row.spyRel, 1)} />
+        {spread != null && <V k="SPREAD" v={`${spread >= 0 ? '+' : ''}${spread.toFixed(1)}`} color={spread >= 0 ? 'var(--color-pos)' : 'var(--color-neg)'} />}
+        <V k="BASE" v="100 AT START" />
+      </span>
+    );
+  }
   if (chartType === 'candles' && row.open != null) {
     const c = dirColor(row);
     return (
-      <span className="font-mono text-xs">
+      <span className="readout font-mono text-xs">
         <V k="O" v={fix(row.open)} /><V k="H" v={fix(row.high)} /><V k="L" v={fix(row.low)} /><V k="C" v={fix(row.close)} color={c} />
         {row.volume != null && <V k="V" v={compact(row.volume)} />}
       </span>
     );
   }
   return (
-    <span className="font-mono text-xs">
+    <span className="readout font-mono text-xs">
       <V k="C" v={fix(row.close)} />
       {row.sma_20 != null && <V k="SMA20" v={fix(row.sma_20)} />}
       {row.sma_50 != null && <V k="SMA50" v={fix(row.sma_50)} />}
@@ -182,6 +225,8 @@ export default function PriceChart({ ticker }) {
   const [prefs, setPrefs] = useState(readPrefs);
   const [measure, setMeasure] = useState({ a: null, b: null });
   const [cursor, setCursor] = useState(null);
+  // SPY closes for the same window, fetched only when the VS SPY mode is on.
+  const [spy, setSpy] = useState({ period: null, rows: null });
   // Series hidden via the legend. Click an entry to drop it and click again
   // to bring it back.
   const [hidden, setHidden] = useState({});
@@ -217,7 +262,7 @@ export default function PriceChart({ ticker }) {
   const rowAt = (e) => {
     if (!e || e.activeLabel == null) return null;
     const idx = e.activeIndex ?? e.activeTooltipIndex;
-    return (idx != null && data[idx]) || data.find(d => d.date === e.activeLabel) || null;
+    return (idx != null && rows[idx]) || rows.find(d => d.date === e.activeLabel) || null;
   };
   const handleMove = (e) => setCursor(rowAt(e));
 
@@ -227,6 +272,7 @@ export default function PriceChart({ ticker }) {
     // click arrives, one that started in the legend is a series toggle, not a
     // measurement pick.
     if (event?.target?.closest?.('.recharts-legend-wrapper')) return;
+    if (chartType === 'spy') return; // the axis is an index here, not dollars
     const row = rowAt(e);
     if (!row) return;
     const point = { date: row.date, close: row.close };
@@ -280,15 +326,53 @@ export default function PriceChart({ ticker }) {
     return () => { live = false; };
   }, [ticker, period]);
 
+  // VS SPY needs the index for the same window; cached per period.
+  useEffect(() => {
+    if (chartType !== 'spy' || !ticker || spy.period === period) return undefined;
+    let live = true;
+    fetch(`${API}/history/SPY?period=${period}`)
+      .then(r => (r.ok ? r.json() : { prices: [] }))
+      .then(d => { if (live) setSpy({ period, rows: d.prices || [] }); })
+      .catch(() => { if (live) setSpy({ period, rows: [] }); });
+    return () => { live = false; };
+  }, [chartType, ticker, period, spy.period]);
+
+  // Chart keys: arrows step the period, C flips line/candles. Ignored while
+  // typing or while the palette is open.
+  useEffect(() => {
+    const onKey = (e) => {
+      if (inField(e.target) || e.metaKey || e.ctrlKey || e.altKey || document.querySelector('.palette')) return;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        setPeriod(p => {
+          const i = PERIODS.indexOf(p);
+          return PERIODS[Math.min(PERIODS.length - 1, Math.max(0, i + (e.key === 'ArrowRight' ? 1 : -1)))];
+        });
+      } else if (e.key === 'c' || e.key === 'C') {
+        setPrefs(prev => {
+          const next = { ...prev, chartType: prev.chartType === 'candles' ? 'line' : 'candles' };
+          try { localStorage.setItem(PREFS_KEY, JSON.stringify(next)); } catch (err) { /* session only */ }
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   if (!ticker) return null;
 
   const hasOhlc = data.some(r => r.open != null);
   const showCandles = chartType === 'candles' && hasOhlc;
-  const readoutRow = cursor || data[data.length - 1] || null;
+  const showRel = chartType === 'spy';
+  const mode = showRel ? 'spy' : showCandles ? 'candles' : 'line';
+  const rows = showRel && spy.period === period ? withRelative(data, spy.rows) : data;
+  const readoutRow = cursor || rows[rows.length - 1] || null;
   const first = data[0]?.close;
   // Candles need the axis to hug the price range; a bar's default domain
   // would drag it down to zero.
   const priceDomain = showCandles ? [(min) => min * 0.995, (max) => max * 1.005] : ['auto', 'auto'];
+  const yTick = showRel ? (v) => Math.round(v) : (v) => `$${Math.round(v)}`;
 
   return (
     <div className="p-4 mt-4" style={{ border: '1px solid var(--color-divider)' }}>
@@ -301,14 +385,14 @@ export default function PriceChart({ ticker }) {
             </button>
           ))}
           <div className="flex gap-2 ml-2" style={{ borderLeft: '1px solid var(--color-divider)', paddingLeft: '8px' }}>
-            {[{ key: 'line', label: 'LINE' }, { key: 'candles', label: 'CANDLES' }].map(t => {
-              const disabled = t.key === 'candles' && !loading && !hasOhlc;
+            {CHART_TYPES.map(t => {
+              const disabled = (t.key === 'candles' && !loading && !hasOhlc) || (t.key === 'spy' && ticker === 'SPY');
               return (
                 <button
                   key={t.key}
                   onClick={() => !disabled && updatePrefs({ chartType: t.key })}
                   disabled={disabled}
-                  title={disabled ? 'No OHLC data for this range' : undefined}
+                  title={disabled ? (t.key === 'spy' ? 'SPY against itself' : 'No OHLC data for this range') : undefined}
                   className={`chip${chartType === t.key ? ' chip--on' : ''}`}
                   style={disabled ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
                 >
@@ -329,8 +413,10 @@ export default function PriceChart({ ticker }) {
 
       {!loading && !error && (
         <div className="flex items-center justify-between gap-4 mb-3 font-mono text-xs flex-wrap">
-          <Readout row={readoutRow} chartType={showCandles ? 'candles' : 'line'} />
-          {!measure.a ? (
+          <Readout row={readoutRow} chartType={mode} ticker={ticker} />
+          {showRel ? (
+            <span style={{ color: 'var(--color-muted)' }}>Both rebased to 100 at the start of the range.</span>
+          ) : !measure.a ? (
             <span style={{ color: 'var(--color-muted)' }}>Click two points to measure the move between them.</span>
           ) : (
             <span className="flex items-center gap-4 flex-wrap">
@@ -361,7 +447,7 @@ export default function PriceChart({ ticker }) {
         <>
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart
-              data={data}
+              data={rows}
               syncId={SYNC}
               margin={{ top: 5, right: 5, bottom: 5, left: 0 }}
               onClick={handleChartClick}
@@ -370,15 +456,21 @@ export default function PriceChart({ ticker }) {
               style={{ cursor: 'crosshair' }}
             >
               <XAxis dataKey="date" tickFormatter={formatDate} tick={AXIS_TICK} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={40} />
-              <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} domain={priceDomain} width={Y_WIDTH} tickFormatter={v => `$${Math.round(v)}`} />
+              <YAxis tick={AXIS_TICK} tickLine={false} axisLine={false} domain={priceDomain} width={Y_WIDTH} tickFormatter={yTick} />
               <Tooltip
-                content={<PriceTooltip first={first} formatDate={formatDate} chartType={showCandles ? 'candles' : 'line'} panes={panes} hidden={hidden} />}
+                content={<PriceTooltip first={first} formatDate={formatDate} chartType={mode} panes={panes} hidden={hidden} ticker={ticker} />}
               />
               <Legend iconType="square" onClick={toggleSeries} formatter={renderLegendLabel} wrapperStyle={legendWrapperStyle} />
               {showCandles && (
                 <Bar dataKey="range" name="OHLC" legendType="none" tooltipType="none" isAnimationActive={false} maxBarSize={10} shape={<Candle />} />
               )}
-              {LINES.filter(l => !(showCandles && l.key === 'close')).map(({ key, label, color, width, dash }) => (
+              {showRel && (
+                <>
+                  <Line type="linear" dataKey="rel" name={ticker} stroke={SERIES.primary} strokeWidth={1.5} dot={false} legendType="square" connectNulls {...ANIM} />
+                  <Line type="linear" dataKey="spyRel" name="SPY" stroke={SERIES.overlay1} strokeWidth={1} strokeDasharray="4 4" dot={false} legendType="square" connectNulls {...ANIM} />
+                </>
+              )}
+              {!showRel && LINES.filter(l => !(showCandles && l.key === 'close')).map(({ key, label, color, width, dash }) => (
                 <Line
                   key={key}
                   type="linear"
@@ -393,7 +485,7 @@ export default function PriceChart({ ticker }) {
                   {...ANIM}
                 />
               ))}
-              {measureRefs()}
+              {!showRel && measureRefs()}
             </ComposedChart>
           </ResponsiveContainer>
 

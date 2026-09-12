@@ -73,11 +73,17 @@ export default function Sparkline({
   );
 }
 
-/** Percent move across a sparkline window, e.g. "+4.2% 1M". */
-export function WindowChange({ data, label = '1M', className = 'font-mono text-xs' }) {
+/** Percent move from the first to the last point of a window, or null. */
+export const windowPct = (data) => {
   const pts = (data || []).filter(v => typeof v === 'number' && Number.isFinite(v));
   if (pts.length < 2 || pts[0] === 0) return null;
-  const pct = ((pts[pts.length - 1] - pts[0]) / pts[0]) * 100;
+  return ((pts[pts.length - 1] - pts[0]) / pts[0]) * 100;
+};
+
+/** Percent move across a sparkline window, e.g. "+4.2% 1M". */
+export function WindowChange({ data, label = '1M', className = 'font-mono text-xs' }) {
+  const pct = windowPct(data);
+  if (pct == null) return null;
   const up = pct >= 0;
   return (
     <span className={className} style={{ color: up ? 'var(--color-pos)' : 'var(--color-neg)', whiteSpace: 'nowrap' }}>
